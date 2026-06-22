@@ -47,7 +47,7 @@ from agent.allocation import run_allocation_agent
 from agent.risk_gate import apply_risk_gate, RiskConfig, RiskState, RiskVeto
 from agent.execution import (
     get_alpaca_client, get_portfolio_value, get_current_weights,
-    rebalance_to_weights, cancel_all_open_orders, is_market_open,
+    rebalance_to_weights, ensure_trailing_stops, is_market_open,
 )
 from agent.journal import log_decision, log_order, generate_journal_entry
 from agent.llm import backend_info
@@ -161,7 +161,6 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
         logger.info("DRY RUN — skipping order execution. Would target: %s",
                     {t: f"{w:.1%}" for t, w in final_weights.items()})
     elif final_weights:
-        cancel_all_open_orders(client)
         order_results = rebalance_to_weights(
             target_weights=final_weights,
             portfolio_value=portfolio_value,
@@ -221,9 +220,23 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true",
                         help="Run full analysis and push report, but place no orders. "
                              "Works any day, market open or closed.")
+    parser.add_argument("--protect-only", action="store_true",
+                        help="Skip analysis/trading; just place trailing stops on "
+                             "existing positions. Use to secure current holdings now.")
     args = parser.parse_args()
 
     _check_env()
+
+    if args.protect_only:
+        client = get_alpaca_client()
+        placed = ensure_trailing_stops(RISK_CONFIG.stop_loss_pct * 100.0, client)
+        if placed:
+            for p in placed:
+                logger.info("Protected %s with trailing stop (%d sh)", p["ticker"], p["qty"])
+        else:
+            logger.info("All positions already protected (or none to protect).")
+        return
+
     state = RiskState()
     run_daily_cycle(state, dry_run=args.dry_run)
 

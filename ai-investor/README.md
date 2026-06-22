@@ -128,7 +128,9 @@ The schedule fires in your local timezone; pick a time after the 9:30am ET open.
 ## Hard rules
 
 - Long only. No shorts or options until long-only is proven on paper.
-- Every order carries a stop-loss — enforced in code, not convention.
+- Buys use whole-share quantities so every position can carry a real,
+  broker-side **trailing stop** (7% trail) — fractional shares cannot hold
+  stop orders at Alpaca. Stops are enforced after every cycle, in code.
 - The risk gate is deterministic code with veto power over the LLM.
 - Paper trade 90+ days and 100+ trades before any real money.
 - Kill switch: revoke the Alpaca API key.
