@@ -26,10 +26,18 @@ import logging
 import os
 import sys
 from datetime import date, datetime
+from pathlib import Path
+
+# Make the script runnable from ANY working directory (e.g. an Odysseus
+# scheduled task or Windows Task Scheduler). Anchor cwd, import path, and
+# config to this file's own folder before importing anything local.
+_HERE = Path(__file__).resolve().parent
+os.chdir(_HERE)
+sys.path.insert(0, str(_HERE))
 
 # Load .env BEFORE importing agent modules (they read config at import time).
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(_HERE / ".env")
 
 import yfinance as yf
 
