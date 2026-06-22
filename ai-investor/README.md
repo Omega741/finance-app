@@ -52,14 +52,17 @@ harness/          Bias-guarded backtesting
   strategies.py   Swappable strategies (buy-hold, trend, momentum, RSI, dual-mom)
 
 agent/            Paper trading loop (Alpaca paper account)
+  llm.py          Pluggable LLM backend: local Ollama (default, free) or Anthropic
   signals.py      DETERMINISTIC: RSI, MA, MACD, ATR, momentum -> numeric scores
   risk_gate.py    DETERMINISTIC: position caps, daily-loss halt, PDT, stop-loss
   research.py     LLM: news synthesis, sentiment, red-flag extraction
   allocation.py   LLM: target weights + a challenger that argues against them
   execution.py    Alpaca paper orders — every buy requires a stop-loss
   journal.py      DuckDB journal + LLM narrative entry
+  odysseus_sync.py Best-effort push of the daily report to Odysseus (optional)
 
-paper_trader.py   Main daily orchestration loop
+paper_trader.py   Main daily orchestration loop (supports --dry-run)
+status.py         Read-only snapshot of the paper account (value, P/L, positions)
 run_example.py    Backtest demo (no broker or API keys needed)
 ```
 
@@ -86,16 +89,41 @@ pip install -r requirements.txt
 python run_example.py
 ```
 
-### Paper trading (requires API keys)
+### Paper trading
+
+Only an Alpaca paper account is required — the LLM runs locally on Ollama by
+default, so no paid API key is needed.
 
 ```bash
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY, ALPACA_API_KEY, ALPACA_SECRET_KEY (paper account)
-python paper_trader.py
+# fill in ALPACA_API_KEY and ALPACA_SECRET_KEY (free paper account)
+# LLM_BACKEND defaults to ollama; install Ollama and pull the model:
+#   ollama pull qwen3.5:9b
+# (only set ANTHROPIC_API_KEY if you switch LLM_BACKEND=anthropic)
+
+python paper_trader.py             # live: trades when the market is open
+python paper_trader.py --dry-run   # preview any day: full analysis, no orders
+python status.py                   # snapshot: portfolio value, P/L, positions
 ```
 
 Get a free Alpaca paper account at [alpaca.markets](https://alpaca.markets).
 The execution layer is hardcoded to `paper=True`.
+
+### Automating the daily run
+
+`paper_trader.py` is self-locating (runs from any working directory), so it can
+be driven by a scheduler. On Windows, register a Task Scheduler job to run it
+each weekday shortly after the market opens:
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute "<path>\venv\Scripts\python.exe" `
+           -Argument '"<path>\paper_trader.py"' -WorkingDirectory "<path>"
+$trigger = New-ScheduledTaskTrigger -Weekly `
+           -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 9:35AM
+Register-ScheduledTask -TaskName "AI Paper Trader" -Action $action -Trigger $trigger
+```
+
+The schedule fires in your local timezone; pick a time after the 9:30am ET open.
 
 ## Hard rules
 
