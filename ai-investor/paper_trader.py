@@ -1,0 +1,189 @@
+"""
+paper_trader.py
+
+Main orchestration loop for the paper trading agent.
+
+Run once per day after market open:
+    python paper_trader.py
+
+Flow:
+  1. Market status check (exit if closed)
+  2. Research agent: news + price context via Claude
+  3. Signal engine: deterministic RSI, MA, MACD, momentum
+  4. Allocation agent: Claude proposes target weights
+  5. Challenger: second Claude call argues against the allocation
+  6. Risk gate: deterministic veto and position caps
+  7. Execution: Alpaca paper orders, each with a stop-loss
+  8. Journal: Claude writes narrative entry to DuckDB
+
+The LLM drives synthesis. Code drives safety.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+from datetime import date, datetime
+
+import yfinance as yf
+
+from agent.signals import compute_signals, signals_to_dict
+from agent.research import run_research_agent, fetch_news_headlines
+from agent.allocation import run_allocation_agent
+from agent.risk_gate import apply_risk_gate, RiskConfig, RiskState, RiskVeto
+from agent.execution import (
+    get_alpaca_client, get_portfolio_value, get_current_weights,
+    rebalance_to_weights, cancel_all_open_orders, is_market_open,
+)
+from agent.journal import log_decision, log_order, generate_journal_entry
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+)
+logger = logging.getLogger("paper_trader")
+
+# ---------------------------------------------------------------------------
+# Configuration — edit this section
+# ---------------------------------------------------------------------------
+WATCHLIST = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
+    "JPM", "BRK-B", "UNH", "XOM", "JNJ",
+]
+
+RISK_CONFIG = RiskConfig(
+    max_position_pct=0.20,
+    cash_floor_pct=0.10,
+    max_daily_loss_pct=0.02,
+    stop_loss_pct=0.07,
+)
+
+MIN_TRADE_DOLLARS = 50.0
+# ---------------------------------------------------------------------------
+
+
+def _check_env() -> None:
+    required = ["ANTHROPIC_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY"]
+    missing = [k for k in required if not os.environ.get(k)]
+    if missing:
+        logger.error("Missing env vars: %s. Check your .env file.", missing)
+        sys.exit(1)
+
+
+def _load_prices(tickers: list[str], period: str = "2y") -> object:
+    """Pull 2 years of daily closes via yfinance for signal computation."""
+    df = yf.download(tickers, period=period, auto_adjust=True, progress=False)
+    return df["Close"].dropna(how="all").ffill()
+
+
+def run_daily_cycle(state: RiskState) -> None:
+    today = date.today()
+    logger.info("=== Paper trader daily cycle %s ===", today)
+
+    client = get_alpaca_client()
+
+    if not is_market_open(client):
+        logger.info("Market is closed. Nothing to do.")
+        return
+
+    portfolio_value, cash = get_portfolio_value(client)
+    cash_pct = cash / portfolio_value if portfolio_value > 0 else 1.0
+    current_weights = get_current_weights(client)
+    logger.info("Portfolio $%.2f | Cash %.1f%%", portfolio_value, cash_pct * 100)
+
+    # 1. Load price data for signals
+    logger.info("Fetching price data for %d tickers...", len(WATCHLIST))
+    prices = _load_prices(WATCHLIST)
+
+    # 2. Compute deterministic signals
+    signal_bundles = compute_signals(prices, WATCHLIST)
+    signals_dict = signals_to_dict(signal_bundles)
+    logger.info("Signals computed for %d tickers", len(signal_bundles))
+
+    # 3. Research agent
+    logger.info("Running research agent...")
+    headlines = fetch_news_headlines(WATCHLIST)
+    research = run_research_agent(WATCHLIST, signals_dict, headlines)
+
+    # 4. Allocation agent + challenger
+    logger.info("Running allocation agent...")
+    proposed_weights, objections = run_allocation_agent(
+        tickers=WATCHLIST,
+        signal_bundles=signal_bundles,
+        research=research,
+        current_weights=current_weights,
+        cash_pct=cash_pct,
+    )
+    logger.info("Proposed: %s", {t: f"{w:.1%}" for t, w in proposed_weights.items()})
+    if objections:
+        logger.info("Challenger objections: %s", objections)
+
+    # 5. Risk gate — deterministic, has veto power
+    try:
+        final_weights = apply_risk_gate(
+            proposed_weights=proposed_weights,
+            portfolio_value=portfolio_value,
+            portfolio_value_open=state.portfolio_value_open or portfolio_value,
+            equity=portfolio_value,
+            today=today,
+            state=state,
+            config=RISK_CONFIG,
+        )
+    except RiskVeto as e:
+        logger.warning("RISK VETO: %s", e)
+        final_weights = {}
+
+    # 6. Execute rebalance
+    orders_placed = []
+    if final_weights:
+        cancel_all_open_orders(client)
+        order_results = rebalance_to_weights(
+            target_weights=final_weights,
+            portfolio_value=portfolio_value,
+            stop_loss_pct=RISK_CONFIG.stop_loss_pct,
+            min_trade_dollars=MIN_TRADE_DOLLARS,
+            client=client,
+        )
+        for r in order_results:
+            orders_placed.append({
+                "ticker": r.ticker, "side": r.side,
+                "stop_price": r.stop_price, "order_id": r.order_id,
+            })
+            log_order(today, r.ticker, r.side, 0, r.stop_price, r.order_id, r.status)
+    else:
+        logger.info("No trades — holding current positions.")
+
+    # 7. Journal entry
+    research_dict = {
+        t: {"sentiment": r.sentiment, "summary": r.summary, "flags": r.flags}
+        for t, r in research.items()
+    }
+    notes = generate_journal_entry(
+        today, final_weights, objections, orders_placed, portfolio_value, research_dict
+    )
+    log_decision(
+        run_date=today,
+        watchlist=WATCHLIST,
+        signals=signals_dict,
+        research=research_dict,
+        proposed_weights=proposed_weights,
+        objections=objections,
+        final_weights=final_weights,
+        orders=orders_placed,
+        portfolio_value=portfolio_value,
+        notes=notes,
+    )
+    logger.info("Journal entry saved.")
+    logger.info("Notes: %s", notes)
+    logger.info("=== Cycle complete ===")
+
+
+def main() -> None:
+    _check_env()
+    state = RiskState()
+    run_daily_cycle(state)
+
+
+if __name__ == "__main__":
+    main()

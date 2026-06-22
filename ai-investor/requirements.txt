@@ -1,0 +1,18 @@
+# Core harness
+pandas>=2.0
+numpy>=1.24
+
+# Real market data
+yfinance>=0.2.40
+
+# Paper trading broker
+alpaca-py>=0.26.0
+
+# LLM agents
+anthropic>=0.40.0
+
+# Journal persistence
+duckdb>=0.10.0
+
+# Optional: FRED macro data
+# fredapi>=0.5.0

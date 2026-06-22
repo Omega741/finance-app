@@ -35,3 +35,13 @@ Thumbs.db
 
 # Claude Code
 .claude/settings.local.json
+
+# Python (ai-investor)
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+ai-investor/data/
+*.duckdb
+ai-investor/.env
