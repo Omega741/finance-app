@@ -9,7 +9,8 @@ yfinance>=0.2.40
 alpaca-py>=0.26.0
 
 # LLM agents
-anthropic>=0.40.0
+requests>=2.31.0       # local Ollama backend (default)
+anthropic>=0.40.0      # optional — only if LLM_BACKEND=anthropic
 
 # Journal persistence
 duckdb>=0.10.0

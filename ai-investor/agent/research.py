@@ -11,17 +11,14 @@ the deterministic signal engine says "here is what the math says."
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from dataclasses import dataclass
 
-import anthropic
+from .llm import chat_json
 
 logger = logging.getLogger(__name__)
 
-RESEARCH_MODEL = "claude-opus-4-8"  # use most capable for synthesis
-MAX_TOKENS = 1024
+MAX_TOKENS = 2048
 
 
 @dataclass
@@ -63,10 +60,8 @@ def run_research_agent(
     research view per ticker.
 
     Returns a dict of ResearchResult per ticker. Falls back to neutral
-    if the API call fails — never blocks execution.
+    if the call fails — never blocks execution.
     """
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     if headlines is None:
         headlines = fetch_news_headlines(tickers)
 
@@ -93,19 +88,10 @@ def run_research_agent(
 
     results: dict[str, ResearchResult] = {}
     try:
-        response = client.messages.create(
-            model=RESEARCH_MODEL,
-            max_tokens=MAX_TOKENS,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
-        # strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        parsed = json.loads(raw)
-        for item in parsed:
+        parsed = chat_json(prompt, max_tokens=MAX_TOKENS)
+        if isinstance(parsed, dict):  # some models wrap the array in a key
+            parsed = next((v for v in parsed.values() if isinstance(v, list)), [parsed])
+        for item in (parsed or []):
             t = item.get("ticker", "")
             if t in tickers:
                 results[t] = ResearchResult(

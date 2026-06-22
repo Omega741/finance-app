@@ -21,6 +21,29 @@ So the design splits responsibilities: the **LLM does synthesis, screening, and
 explanation**; the **signals and risk rules stay deterministic**. The profit
 expectation is "match a benchmark while learning," not "beat the market."
 
+## Free by default
+
+The LLM backend is pluggable. It defaults to **local Ollama** (runs on your own
+GPU, $0, fully private) and can flip to the Anthropic API for sharper synthesis.
+Because the risk gate is deterministic, a weaker local model still cannot bypass
+position caps or skip stop-losses — it only affects the quality of synthesis.
+
+Set the backend in `.env`:
+
+```
+LLM_BACKEND=ollama          # local + free (default)
+LLM_MODEL=qwen3.5:9b
+# or:
+LLM_BACKEND=anthropic       # paid API
+```
+
+## Optional: Odysseus pairing
+
+If you run [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus), set
+`ODYSSEUS_URL` and `ODYSSEUS_API_TOKEN` in `.env` and each day's decision report
+is pushed to the Odysseus web UI (viewable on your phone too). Pairing is
+best-effort: if Odysseus is down, trading and the local journal are unaffected.
+
 ## Architecture
 
 ```

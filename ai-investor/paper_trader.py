@@ -37,6 +37,8 @@ from agent.execution import (
     rebalance_to_weights, cancel_all_open_orders, is_market_open,
 )
 from agent.journal import log_decision, log_order, generate_journal_entry
+from agent.llm import backend_info
+from agent import odysseus_sync
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,11 +66,16 @@ MIN_TRADE_DOLLARS = 50.0
 
 
 def _check_env() -> None:
-    required = ["ANTHROPIC_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY"]
+    # Alpaca is always required. The LLM backend is pluggable: Ollama (local,
+    # free) needs no key; Anthropic needs ANTHROPIC_API_KEY.
+    required = ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"]
+    if os.environ.get("LLM_BACKEND", "ollama").lower() == "anthropic":
+        required.append("ANTHROPIC_API_KEY")
     missing = [k for k in required if not os.environ.get(k)]
     if missing:
         logger.error("Missing env vars: %s. Check your .env file.", missing)
         sys.exit(1)
+    logger.info("LLM backend: %s", backend_info())
 
 
 def _load_prices(tickers: list[str], period: str = "2y") -> object:
@@ -176,6 +183,19 @@ def run_daily_cycle(state: RiskState) -> None:
     )
     logger.info("Journal entry saved.")
     logger.info("Notes: %s", notes)
+
+    # 8. Pair to Odysseus — push the decision report to the web UI (best-effort)
+    if odysseus_sync.is_paired():
+        odysseus_sync.push_decision(
+            run_date=today,
+            final_weights=final_weights,
+            objections=objections,
+            orders=orders_placed,
+            portfolio_value=portfolio_value,
+            research=research_dict,
+            notes=notes,
+        )
+
     logger.info("=== Cycle complete ===")
 
 

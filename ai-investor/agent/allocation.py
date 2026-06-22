@@ -12,22 +12,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 
-import anthropic
-
+from .llm import chat_json
 from .research import ResearchResult
 from .signals import SignalBundle, signals_to_dict
 
 logger = logging.getLogger(__name__)
 
-ALLOCATION_MODEL = "claude-sonnet-4-6"
-CHALLENGER_MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 512
+MAX_TOKENS = 2048
 
 
 def _call_allocation(
-    client: anthropic.Anthropic,
     tickers: list[str],
     signals: dict[str, dict],
     research: dict[str, ResearchResult],
@@ -56,31 +51,20 @@ def _call_allocation(
         f"Current weights: {current_weights}\n"
         f"Current cash: {cash_pct:.1%}\n\n"
         "Signal + research data:\n" + "\n".join(research_lines) + "\n\n"
-        "Output ONLY a JSON object like {\"AAPL\": 0.15, \"MSFT\": 0.20}. "
-        "No explanation, no markdown."
+        "Output ONLY a JSON object like {\"AAPL\": 0.15, \"MSFT\": 0.20}."
     )
 
-    response = client.messages.create(
-        model=ALLOCATION_MODEL,
-        max_tokens=MAX_TOKENS,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw)
+    result = chat_json(prompt, max_tokens=MAX_TOKENS)
+    return result if isinstance(result, dict) else {}
 
 
 def _call_challenger(
-    client: anthropic.Anthropic,
     proposed: dict[str, float],
     signals: dict[str, dict],
     research: dict[str, ResearchResult],
 ) -> list[str]:
     """
-    A second Claude call that argues AGAINST the proposed allocation.
+    A second LLM call that argues AGAINST the proposed allocation.
     Returns a list of objections. Measurably reduces dumb trades.
     """
     research_flags = {t: r.flags for t, r in research.items() if r.flags}
@@ -92,22 +76,11 @@ def _call_challenger(
         "List specific objections to this allocation. Focus on: concentration risk, "
         "contradictions between signals and sentiment, overlooked red flags, "
         "or names where conviction is too high given uncertainty.\n"
-        "Output a JSON array of short objection strings. Empty array if no serious concerns."
+        'Output a JSON array of short objection strings like ["too concentrated in tech"]. '
+        "Empty array [] if no serious concerns."
     )
-    response = client.messages.create(
-        model=CHALLENGER_MODEL,
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    try:
-        return json.loads(raw)
-    except Exception:
-        return []
+    result = chat_json(prompt, max_tokens=1024)
+    return result if isinstance(result, list) else []
 
 
 def run_allocation_agent(
@@ -121,21 +94,21 @@ def run_allocation_agent(
     Returns (proposed_weights, challenger_objections).
     Caller should log objections and pass weights through risk gate.
     """
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     signals_dict = signals_to_dict(signal_bundles)
 
     try:
-        proposed = _call_allocation(client, tickers, signals_dict, research,
+        proposed = _call_allocation(tickers, signals_dict, research,
                                     current_weights, cash_pct)
     except Exception as e:
         logger.error("Allocation agent failed: %s. Holding current weights.", e)
         return current_weights, [f"Allocation agent error: {e}"]
 
     # validate types
-    proposed = {k: float(v) for k, v in proposed.items() if k in tickers}
+    proposed = {k: float(v) for k, v in proposed.items()
+                if k in tickers and isinstance(v, (int, float))}
 
     try:
-        objections = _call_challenger(client, proposed, signals_dict, research)
+        objections = _call_challenger(proposed, signals_dict, research)
     except Exception as e:
         logger.warning("Challenger failed: %s", e)
         objections = []

@@ -126,11 +126,10 @@ def generate_journal_entry(
     research: dict,
 ) -> str:
     """
-    Call Claude to write a narrative journal entry explaining the day's decisions.
+    Call the LLM to write a narrative journal entry explaining the day's decisions.
     Returned string is stored in decisions.notes.
     """
-    import anthropic
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    from .llm import chat
 
     order_summary = json.dumps(orders_placed, indent=2) if orders_placed else "No orders placed."
     research_summary = {
@@ -151,12 +150,8 @@ def generate_journal_entry(
     )
 
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=256,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text.strip()
+        text = chat(prompt, max_tokens=1024)
+        return text.strip() if text else "Journal narrative unavailable."
     except Exception as e:
         logger.warning("Journal narrative failed: %s", e)
         return f"Journal narrative unavailable: {e}"
