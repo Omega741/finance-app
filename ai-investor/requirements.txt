@@ -15,5 +15,8 @@ anthropic>=0.40.0      # optional — only if LLM_BACKEND=anthropic
 # Journal persistence
 duckdb>=0.10.0
 
+# Config
+python-dotenv>=1.0.0
+
 # Optional: FRED macro data
 # fredapi>=0.5.0

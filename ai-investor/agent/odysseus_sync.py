@@ -51,7 +51,7 @@ def _build_report(
 ) -> str:
     """Render the day's decision as a markdown report for Odysseus documents."""
     lines = [
-        f"# Paper Trade — {run_date}",
+        f"# Paper Trade {run_date}",
         "",
         f"**Portfolio value:** ${portfolio_value:,.2f}",
         "",
@@ -107,8 +107,8 @@ def push_decision(
     report = _build_report(run_date, final_weights, objections, orders,
                            portfolio_value, research, notes)
     body = {
-        "session_id": f"paper-trader-{run_date}",
-        "title": f"Paper Trade — {run_date}",
+        "session_id": None,  # standalone document, not tied to a chat session
+        "title": f"Paper Trade {run_date}",
         "content": report,
         "language": "markdown",
     }

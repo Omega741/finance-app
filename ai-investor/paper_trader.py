@@ -21,10 +21,15 @@ The LLM drives synthesis. Code drives safety.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
 from datetime import date, datetime
+
+# Load .env BEFORE importing agent modules (they read config at import time).
+from dotenv import load_dotenv
+load_dotenv()
 
 import yfinance as yf
 
@@ -84,14 +89,15 @@ def _load_prices(tickers: list[str], period: str = "2y") -> object:
     return df["Close"].dropna(how="all").ffill()
 
 
-def run_daily_cycle(state: RiskState) -> None:
+def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
     today = date.today()
-    logger.info("=== Paper trader daily cycle %s ===", today)
+    mode = "DRY RUN (no orders)" if dry_run else "LIVE PAPER"
+    logger.info("=== Paper trader daily cycle %s [%s] ===", today, mode)
 
     client = get_alpaca_client()
 
-    if not is_market_open(client):
-        logger.info("Market is closed. Nothing to do.")
+    if not dry_run and not is_market_open(client):
+        logger.info("Market is closed. Nothing to do. (Use --dry-run to preview any day.)")
         return
 
     portfolio_value, cash = get_portfolio_value(client)
@@ -143,7 +149,10 @@ def run_daily_cycle(state: RiskState) -> None:
 
     # 6. Execute rebalance
     orders_placed = []
-    if final_weights:
+    if dry_run:
+        logger.info("DRY RUN — skipping order execution. Would target: %s",
+                    {t: f"{w:.1%}" for t, w in final_weights.items()})
+    elif final_weights:
         cancel_all_open_orders(client)
         order_results = rebalance_to_weights(
             target_weights=final_weights,
@@ -200,9 +209,15 @@ def run_daily_cycle(state: RiskState) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Paper trading agent")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Run full analysis and push report, but place no orders. "
+                             "Works any day, market open or closed.")
+    args = parser.parse_args()
+
     _check_env()
     state = RiskState()
-    run_daily_cycle(state)
+    run_daily_cycle(state, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

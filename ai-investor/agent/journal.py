@@ -19,8 +19,11 @@ logger = logging.getLogger(__name__)
 DB_PATH = Path(os.environ.get("JOURNAL_DB_PATH", "data/journal.duckdb"))
 
 SCHEMA = """
+CREATE SEQUENCE IF NOT EXISTS decisions_id_seq;
+CREATE SEQUENCE IF NOT EXISTS orders_id_seq;
+
 CREATE TABLE IF NOT EXISTS decisions (
-    id          INTEGER PRIMARY KEY,
+    id          INTEGER PRIMARY KEY DEFAULT nextval('decisions_id_seq'),
     ts          TIMESTAMP NOT NULL,
     run_date    DATE NOT NULL,
     watchlist   TEXT,
@@ -31,11 +34,11 @@ CREATE TABLE IF NOT EXISTS decisions (
     final_weights TEXT,    -- JSON (after risk gate)
     orders      TEXT,      -- JSON
     portfolio_value DOUBLE,
-    notes       TEXT       -- Claude's narrative explanation
+    notes       TEXT       -- LLM narrative explanation
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-    id          INTEGER PRIMARY KEY,
+    id          INTEGER PRIMARY KEY DEFAULT nextval('orders_id_seq'),
     ts          TIMESTAMP NOT NULL,
     run_date    DATE NOT NULL,
     ticker      TEXT,
