@@ -12,6 +12,11 @@ alpaca-py>=0.26.0
 requests>=2.31.0       # local Ollama backend (default)
 anthropic>=0.40.0      # optional — only if LLM_BACKEND=anthropic
 
+# Finance sentiment (FinBERT). CPU torch is plenty for this 110M model:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+transformers>=4.40
+
 # Journal persistence
 duckdb>=0.10.0
 

@@ -21,6 +21,11 @@ So the design splits responsibilities: the **LLM does synthesis, screening, and
 explanation**; the **signals and risk rules stay deterministic**. The profit
 expectation is "match a benchmark while learning," not "beat the market."
 
+News sentiment uses **FinBERT** (a finance-tuned classifier) rather than a
+general LLM guess — it is more reliable at the narrow bullish/bearish call and
+runs in milliseconds. The general LLM still writes summaries and extracts red
+flags. This is feature extraction, not price prediction.
+
 ## Free by default
 
 The LLM backend is pluggable. It defaults to **local Ollama** (runs on your own
@@ -53,6 +58,7 @@ harness/          Bias-guarded backtesting
 
 agent/            Paper trading loop (Alpaca paper account)
   llm.py          Pluggable LLM backend: local Ollama (default, free) or Anthropic
+  finbert_sentiment.py  FinBERT: finance-tuned per-headline sentiment classifier
   signals.py      DETERMINISTIC: RSI, MA, MACD, ATR, momentum -> numeric scores
   risk_gate.py    DETERMINISTIC: position caps, daily-loss halt, PDT, stop-loss
   research.py     LLM: news synthesis, sentiment, red-flag extraction

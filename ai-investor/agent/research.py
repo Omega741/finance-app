@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass
 
 from .llm import chat_json
+from . import finbert_sentiment
 
 logger = logging.getLogger(__name__)
 
@@ -111,5 +112,20 @@ def run_research_agent(
                 ticker=t, sentiment="neutral", confidence=0.0,
                 summary="Research unavailable.", flags=[]
             )
+
+    # FinBERT override: a finance-tuned classifier is more reliable than a
+    # general LLM at the sentiment label. Where it has headlines to score, its
+    # sentiment + confidence replace the LLM's. The LLM keeps summary + flags.
+    if finbert_sentiment.is_available():
+        for t in tickers:
+            fb = finbert_sentiment.score_ticker(headlines.get(t, []))
+            if fb:
+                results[t].sentiment = fb["sentiment"]
+                results[t].confidence = fb["confidence"]
+                if fb["sentiment"] != "neutral":
+                    results[t].summary = (
+                        f"[FinBERT {fb['sentiment']} {fb['net_score']:+.2f} "
+                        f"from {fb['n']} headlines] " + results[t].summary
+                    )
 
     return results
