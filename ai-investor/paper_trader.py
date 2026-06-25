@@ -44,7 +44,9 @@ import yfinance as yf
 from agent.signals import compute_signals, signals_to_dict
 from agent.research import run_research_agent, fetch_news_headlines
 from agent.allocation import run_allocation_agent
-from agent.risk_gate import apply_risk_gate, RiskConfig, RiskState, RiskVeto
+from agent.risk_gate import (
+    apply_risk_gate, apply_turnover_control, RiskConfig, RiskState, RiskVeto,
+)
 from agent.execution import (
     get_alpaca_client, get_portfolio_value, get_current_weights,
     rebalance_to_weights, ensure_trailing_stops, is_market_open,
@@ -154,6 +156,10 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
     except RiskVeto as e:
         logger.warning("RISK VETO: %s", e)
         final_weights = {}
+
+    # 5b. Turnover control — hold positions within the no-trade band to cut churn
+    if final_weights:
+        final_weights = apply_turnover_control(current_weights, final_weights, RISK_CONFIG)
 
     # 6. Execute rebalance
     orders_placed = []

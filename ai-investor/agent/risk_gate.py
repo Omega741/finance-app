@@ -35,6 +35,7 @@ class RiskConfig:
     stop_loss_pct: float = 0.07       # default stop-loss: 7% below entry
     pdt_equity_threshold: float = 25_000.0  # PDT rule kicks in below this
     pdt_max_day_trades: int = 3       # max round trips in a rolling 5-day window
+    no_trade_band: float = 0.04       # hold a position unless it drifts > 4pp from target
 
 
 @dataclass
@@ -125,3 +126,36 @@ def compute_stop_price(entry_price: float, stop_loss_pct: float | None = None,
     cfg = config or RiskConfig()
     pct = stop_loss_pct if stop_loss_pct is not None else cfg.stop_loss_pct
     return round(entry_price * (1.0 - pct), 4)
+
+
+def apply_turnover_control(
+    current_weights: dict[str, float],
+    target_weights: dict[str, float],
+    config: RiskConfig | None = None,
+) -> dict[str, float]:
+    """
+    Deterministic turnover discipline. A position whose target is within
+    `no_trade_band` of its current weight is held at its current weight
+    instead of traded — this kills pointless micro-rebalancing (the 1-share
+    trims) and dampens day-to-day churn.
+
+    Large moves still pass through: building from cash (0 -> 0.18) or fully
+    exiting a name (0.18 -> 0) is a big drift and trades normally. This trims
+    noise, it does not freeze the strategy.
+
+    Returns the execution weights (drops ~zero entries).
+    """
+    cfg = config or RiskConfig()
+    adjusted: dict[str, float] = dict(target_weights)
+    held = []
+    for t in set(current_weights) | set(target_weights):
+        cur = current_weights.get(t, 0.0)
+        tgt = target_weights.get(t, 0.0)
+        if abs(tgt - cur) < cfg.no_trade_band:
+            adjusted[t] = cur            # hold; don't trade a small drift
+            if abs(tgt - cur) > 1e-9:
+                held.append(t)
+    if held:
+        logger.info("Turnover control: holding %d position(s) within %.0f%% band: %s",
+                    len(held), cfg.no_trade_band * 100, held)
+    return {t: w for t, w in adjusted.items() if w > 1e-9}
