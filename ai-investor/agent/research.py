@@ -31,6 +31,27 @@ class ResearchResult:
     flags: list[str]      # red flags to surface to risk gate / journal
 
 
+def _normalize_items(parsed) -> list:
+    """
+    Coerce whatever JSON shape a local model returned into a list of
+    per-ticker dicts. Handles:
+      - list of dicts (intended)            -> as-is
+      - dict wrapping a list under any key  -> the inner list
+      - dict keyed by ticker {AAPL: {...}}  -> [{ticker: AAPL, ...}, ...]
+      - anything else                       -> [] (caller falls back)
+    """
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        inner = next((v for v in parsed.values() if isinstance(v, list)), None)
+        if inner is not None:
+            return inner
+        if parsed and all(isinstance(v, dict) for v in parsed.values()):
+            return [{**v, "ticker": k} for k, v in parsed.items()]
+        return [parsed]
+    return []
+
+
 def fetch_news_headlines(tickers: list[str]) -> dict[str, list[str]]:
     """Pull recent news headlines via yfinance. Returns {ticker: [headline, ...]}."""
     headlines: dict[str, list[str]] = {}
@@ -90,17 +111,20 @@ def run_research_agent(
     results: dict[str, ResearchResult] = {}
     try:
         parsed = chat_json(prompt, max_tokens=MAX_TOKENS)
-        if isinstance(parsed, dict):  # some models wrap the array in a key
-            parsed = next((v for v in parsed.values() if isinstance(v, list)), [parsed])
-        for item in (parsed or []):
+        for item in _normalize_items(parsed):
+            if not isinstance(item, dict):
+                continue  # local models sometimes emit bare strings — skip them
             t = item.get("ticker", "")
             if t in tickers:
+                flags = item.get("flags", [])
+                if not isinstance(flags, list):
+                    flags = [str(flags)] if flags else []
                 results[t] = ResearchResult(
                     ticker=t,
-                    sentiment=item.get("sentiment", "neutral"),
-                    confidence=float(item.get("confidence", 0.5)),
-                    summary=item.get("summary", ""),
-                    flags=item.get("flags", []),
+                    sentiment=str(item.get("sentiment", "neutral")),
+                    confidence=float(item.get("confidence", 0.5) or 0.5),
+                    summary=str(item.get("summary", "")),
+                    flags=flags,
                 )
     except Exception as e:
         logger.error("Research agent failed: %s. Falling back to neutral.", e)
