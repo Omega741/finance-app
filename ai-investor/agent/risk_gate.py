@@ -36,6 +36,7 @@ class RiskConfig:
     pdt_equity_threshold: float = 25_000.0  # PDT rule kicks in below this
     pdt_max_day_trades: int = 3       # max round trips in a rolling 5-day window
     no_trade_band: float = 0.04       # hold a position unless it drifts > 4pp from target
+    max_turnover_per_cycle: float = 0.30  # cap total weight change/cycle once invested
 
 
 @dataclass
@@ -139,11 +140,18 @@ def apply_turnover_control(
     instead of traded — this kills pointless micro-rebalancing (the 1-share
     trims) and dampens day-to-day churn.
 
-    Large moves still pass through: building from cash (0 -> 0.18) or fully
-    exiting a name (0.18 -> 0) is a big drift and trades normally. This trims
-    noise, it does not freeze the strategy.
+    Two layers:
+      1. No-trade band — a position within `no_trade_band` of its current
+         weight is held, killing micro-rebalancing.
+      2. Turnover cap — once the book is built (>=50% invested), total weight
+         change per cycle is capped at `max_turnover_per_cycle`; if a proposed
+         rebalance exceeds it, ALL changes are scaled proportionally so the
+         book only moves part-way toward the new target. This bounds whipsaw:
+         if the allocation agent flip-flops, it can never fully rotate in one
+         day, so it cannot buy-high-then-sell-low across days.
 
-    Returns the execution weights (drops ~zero entries).
+    Initial deployment from cash (<50% invested) is exempt so the book can be
+    built. Returns the execution weights (drops ~zero entries).
     """
     cfg = config or RiskConfig()
     adjusted: dict[str, float] = dict(target_weights)
@@ -158,4 +166,20 @@ def apply_turnover_control(
     if held:
         logger.info("Turnover control: holding %d position(s) within %.0f%% band: %s",
                     len(held), cfg.no_trade_band * 100, held)
+
+    # Turnover cap (skip during initial build so cash can be deployed)
+    invested = sum(current_weights.values())
+    all_t = set(current_weights) | set(adjusted)
+    turnover = sum(abs(adjusted.get(t, 0.0) - current_weights.get(t, 0.0)) for t in all_t)
+    if invested >= 0.5 and turnover > cfg.max_turnover_per_cycle and turnover > 0:
+        scale = cfg.max_turnover_per_cycle / turnover
+        adjusted = {
+            t: current_weights.get(t, 0.0)
+            + (adjusted.get(t, 0.0) - current_weights.get(t, 0.0)) * scale
+            for t in all_t
+        }
+        logger.info("Turnover cap hit: scaling changes by %.2f (%.0f%% -> %.0f%% turnover) "
+                    "— partial move toward target, bounding whipsaw",
+                    scale, turnover * 100, cfg.max_turnover_per_cycle * 100)
+
     return {t: w for t, w in adjusted.items() if w > 1e-9}
