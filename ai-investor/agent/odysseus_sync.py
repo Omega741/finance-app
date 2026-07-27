@@ -124,6 +124,26 @@ def push_decision(
     return False
 
 
+def push_document(title: str, markdown: str) -> bool:
+    """Push an arbitrary markdown document to Odysseus. Best-effort."""
+    cfg = _config()
+    if cfg is None:
+        logger.info("Odysseus not configured — skipping document push.")
+        return False
+    url, token = cfg
+    body = {"session_id": None, "title": title, "content": markdown, "language": "markdown"}
+    try:
+        r = requests.post(f"{url}/api/codex/documents", headers=_headers(token),
+                          data=json.dumps(body), timeout=TIMEOUT)
+        if r.status_code in (200, 201):
+            logger.info("Pushed document to Odysseus: %s", title)
+            return True
+        logger.warning("Odysseus document push returned %s: %s", r.status_code, r.text[:200])
+    except Exception as e:
+        logger.warning("Odysseus document push failed: %s", e)
+    return False
+
+
 def push_memory(text: str, category: str = "fact") -> bool:
     """
     Optionally store a short fact in Odysseus memory so other models on the
