@@ -51,7 +51,8 @@ from agent.execution import (
     get_alpaca_client, get_portfolio_value, get_current_weights,
     rebalance_to_weights, ensure_trailing_stops, is_market_open,
 )
-from agent.journal import log_decision, log_order, generate_journal_entry
+from agent.journal import log_decision, log_order, log_equity, generate_journal_entry
+from agent.cash_sweep import liquidate_cash_sweep, sweep_excess_cash
 from agent.llm import backend_info
 from agent import odysseus_sync
 
@@ -106,9 +107,19 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
 
     client = get_alpaca_client()
 
+    # Equity snapshot on EVERY run — including market-closed and no-trade days —
+    # so the journal keeps an unbroken daily curve for drawdown/Sharpe.
+    pv_now, cash_now = get_portfolio_value(client)
+    log_equity(today, pv_now, cash_now)
+
     if not dry_run and not is_market_open(client):
         logger.info("Market is closed. Nothing to do. (Use --dry-run to preview any day.)")
         return
+
+    # Cash sweep — liquidate SGOV back to cash BEFORE the agent decides, so it
+    # reasons over full cash exactly as before. SGOV is never an agent position.
+    if not dry_run:
+        liquidate_cash_sweep(client)
 
     portfolio_value, cash = get_portfolio_value(client)
     cash_pct = cash / portfolio_value if portfolio_value > 0 else 1.0
@@ -182,6 +193,13 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
             log_order(today, r.ticker, r.side, 0, r.stop_price, r.order_id, r.status)
     else:
         logger.info("No trades — holding current positions.")
+
+    # 6b. Cash sweep — park cash the agent chose not to deploy into SGOV so it
+    # earns yield instead of sitting idle. Runs after stops are set. Value-neutral
+    # (cash -> T-bill ETF), so it does not change portfolio_value.
+    if not dry_run:
+        _, cash_after = get_portfolio_value(client)
+        sweep_excess_cash(portfolio_value, cash_after, client=client)
 
     # 7. Journal entry
     research_dict = {

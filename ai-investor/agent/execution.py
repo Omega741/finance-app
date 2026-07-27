@@ -23,6 +23,11 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Cash-equivalent tickers used only to park idle cash (see agent/cash_sweep.py).
+# They are NOT equity positions: skip trailing-stop enforcement for them —
+# a 7% stop on a T-bill ETF is meaningless and would churn.
+CASH_EQUIVALENTS = {"SGOV"}
+
 
 class MissingStopLoss(Exception):
     """Raised if a position is left without a protective stop."""
@@ -231,6 +236,8 @@ def ensure_trailing_stops(trail_percent: float, client=None) -> list[dict]:
 
     placed: list[dict] = []
     for sym, qty in get_position_qtys(client).items():
+        if sym in CASH_EQUIVALENTS:
+            continue  # cash-parking layer, not an equity position — no stop
         whole = int(qty)  # floor for long positions
         if whole < 1:
             logger.warning("%s position is fractional-only (%.4f) — cannot place a "

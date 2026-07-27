@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS orders (
     order_id    TEXT,
     status      TEXT
 );
+
+-- Continuous daily equity curve. Written on EVERY run, including
+-- market-closed and no-trade days, so drawdown/Sharpe can be computed
+-- from an unbroken series. One row per calendar day (upsert by date).
+CREATE TABLE IF NOT EXISTS equity (
+    snapshot_date   DATE PRIMARY KEY,
+    ts              TIMESTAMP NOT NULL,
+    portfolio_value DOUBLE,
+    cash            DOUBLE,
+    invested_value  DOUBLE
+);
 """
 
 
@@ -108,6 +119,25 @@ def log_order(run_date: date, ticker: str, side: str, notional: float,
         [datetime.utcnow(), run_date, ticker, side, notional, stop_price, order_id, status],
     )
     conn.close()
+
+
+def log_equity(snapshot_date: date, portfolio_value: float, cash: float) -> None:
+    """
+    Record a daily equity snapshot. Called on every run — even when the
+    market is closed or no trades happen — to keep an unbroken equity curve.
+    Upserts: one row per calendar day, last write wins.
+    """
+    conn = _get_conn()
+    conn.execute("DELETE FROM equity WHERE snapshot_date = ?", [snapshot_date])
+    conn.execute(
+        """INSERT INTO equity (snapshot_date, ts, portfolio_value, cash, invested_value)
+           VALUES (?, ?, ?, ?, ?)""",
+        [snapshot_date, datetime.utcnow(), portfolio_value, cash,
+         portfolio_value - cash],
+    )
+    conn.close()
+    logger.info("Equity snapshot: %s $%.2f (cash $%.2f)",
+                snapshot_date, portfolio_value, cash)
 
 
 def get_recent_decisions(n: int = 10) -> list[dict]:
