@@ -101,9 +101,12 @@ def _load_prices(tickers: list[str], period: str = "2y") -> object:
     return df["Close"].dropna(how="all").ffill()
 
 
-def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
+def run_daily_cycle(state: RiskState, dry_run: bool = False,
+                    rebalance_now: bool = False) -> None:
     today = date.today()
     mode = "DRY RUN (no orders)" if dry_run else "LIVE PAPER"
+    if rebalance_now:
+        mode += " + REBALANCE-NOW (skip turnover cap, move straight to target)"
     logger.info("=== Paper trader daily cycle %s [%s] ===", today, mode)
 
     client = get_alpaca_client()
@@ -177,7 +180,14 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
 
     # Turnover control spreads the move toward target over several cycles — a
     # gradual, DCA-like build into the core rather than one jarring rotation.
-    final_weights = apply_turnover_control(current_weights, final_weights, RISK_CONFIG)
+    # --rebalance-now bypasses it for a single deliberate reset straight to
+    # target (the cap exists to bound growth-sleeve whipsaw, not to slow-walk a
+    # one-time structural repositioning — and on paper there's no tax/spread
+    # cost to moving promptly, which research favors anyway).
+    if rebalance_now:
+        logger.info("REBALANCE-NOW: skipping turnover cap — moving straight to target.")
+    else:
+        final_weights = apply_turnover_control(current_weights, final_weights, RISK_CONFIG)
 
     # 6. Execute rebalance
     orders_placed = []
@@ -235,6 +245,10 @@ def main() -> None:
     parser.add_argument("--protect-only", action="store_true",
                         help="Skip analysis/trading; just place trailing stops on "
                              "existing positions. Use to secure current holdings now.")
+    parser.add_argument("--rebalance-now", action="store_true",
+                        help="One-time clean reset: bypass the turnover cap and move "
+                             "straight to the target allocation in a single run "
+                             "(instead of drifting there over several cycles).")
     args = parser.parse_args()
 
     _check_env()
@@ -250,7 +264,7 @@ def main() -> None:
         return
 
     state = RiskState()
-    run_daily_cycle(state, dry_run=args.dry_run)
+    run_daily_cycle(state, dry_run=args.dry_run, rebalance_now=args.rebalance_now)
 
 
 if __name__ == "__main__":
