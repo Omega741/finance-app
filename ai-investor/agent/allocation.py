@@ -28,8 +28,16 @@ def _call_allocation(
     research: dict[str, ResearchResult],
     current_weights: dict[str, float],
     cash_pct: float,
+    budget: float = 0.90,
+    max_per_name: float = 0.20,
 ) -> dict[str, float]:
-    """Primary allocation call. Returns raw target weights."""
+    """
+    Primary allocation call. Returns raw target weights.
+
+    `budget` is the total fraction of the WHOLE portfolio these tickers may
+    occupy (e.g. 0.20 when allocating only the growth sleeve); `max_per_name`
+    caps any single name. Unspent budget falls through to cash downstream.
+    """
     research_lines = []
     for t in tickers:
         r = research.get(t)
@@ -41,21 +49,24 @@ def _call_allocation(
             )
 
     prompt = (
-        "You are a portfolio allocation agent. Your job is to set target weights "
-        "for a long-only paper trading portfolio. Rules:\n"
+        "You are the allocation agent for the GROWTH SLEEVE of a core-satellite "
+        "portfolio. The core (a broad index) and a cash reserve are handled "
+        "separately — you ONLY size these higher-volatility growth names. Rules:\n"
         "- Long only. No shorts.\n"
-        "- Weights must sum to <= 0.90 (10% cash floor enforced externally).\n"
-        "- No single weight > 0.20.\n"
+        f"- Weights are fractions of the WHOLE portfolio and must sum to <= {budget:.2f} "
+        "(this is the growth sleeve's total budget; anything you don't use becomes cash).\n"
+        f"- No single weight > {max_per_name:.2f}.\n"
         "- Prefer names with bullish sentiment AND positive signal score.\n"
-        "- If net outlook is poor, reduce all weights and hold more cash.\n"
+        "- This sleeve is for MAX upside with contained downside: when a name's "
+        "outlook is weak, size it small or drop it — leave that budget in cash "
+        "rather than forcing a bad bet. Under-using the budget is fine.\n"
         "- STICKINESS: prefer keeping current positions. Only change a holding "
-        "when the signal/sentiment clearly justifies it. Do NOT rotate the whole "
-        "portfolio or flip-flop into names you were bearish on yesterday — "
-        "turnover is costly and whipsaws lose money. Stability is a feature.\n\n"
-        f"Current weights: {current_weights}\n"
+        "when the signal/sentiment clearly justifies it. Do NOT flip-flop into "
+        "names you were bearish on yesterday — whipsaws lose money.\n\n"
+        f"Current growth weights: {current_weights}\n"
         f"Current cash: {cash_pct:.1%}\n\n"
         "Signal + research data:\n" + "\n".join(research_lines) + "\n\n"
-        "Output ONLY a JSON object like {\"AAPL\": 0.15, \"MSFT\": 0.20}."
+        "Output ONLY a JSON object like {\"NVDA\": 0.08, \"AMZN\": 0.06}."
     )
 
     result = chat_json(prompt, max_tokens=MAX_TOKENS)
@@ -93,16 +104,21 @@ def run_allocation_agent(
     research: dict[str, ResearchResult],
     current_weights: dict[str, float],
     cash_pct: float,
+    budget: float = 0.90,
+    max_per_name: float = 0.20,
 ) -> tuple[dict[str, float], list[str]]:
     """
     Returns (proposed_weights, challenger_objections).
     Caller should log objections and pass weights through risk gate.
+
+    `budget`/`max_per_name` constrain the sleeve (see _call_allocation).
     """
     signals_dict = signals_to_dict(signal_bundles)
 
     try:
         proposed = _call_allocation(tickers, signals_dict, research,
-                                    current_weights, cash_pct)
+                                    current_weights, cash_pct,
+                                    budget=budget, max_per_name=max_per_name)
     except Exception as e:
         logger.error("Allocation agent failed: %s. Holding current weights.", e)
         return current_weights, [f"Allocation agent error: {e}"]

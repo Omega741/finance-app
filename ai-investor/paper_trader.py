@@ -50,9 +50,12 @@ from agent.risk_gate import (
 from agent.execution import (
     get_alpaca_client, get_portfolio_value, get_current_weights,
     rebalance_to_weights, ensure_trailing_stops, is_market_open,
+    flatten_fractional_dust,
 )
 from agent.journal import log_decision, log_order, log_equity, generate_journal_entry
-from agent.cash_sweep import liquidate_cash_sweep, sweep_excess_cash
+from agent.portfolio_model import (
+    GROWTH_WATCHLIST, GROWTH_BUDGET, GROWTH_MAX_PER_NAME, compose_target_weights,
+)
 from agent.llm import backend_info
 from agent import odysseus_sync
 
@@ -65,10 +68,9 @@ logger = logging.getLogger("paper_trader")
 # ---------------------------------------------------------------------------
 # Configuration — edit this section
 # ---------------------------------------------------------------------------
-WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
-    "JPM", "BRK-B", "UNH", "XOM", "JNJ",
-]
+# The portfolio is a 20/60/20 core-satellite model defined in
+# agent/portfolio_model.py:  20% SGOV cash  |  60% VOO core  |  20% growth.
+# Only the growth sleeve is actively allocated; its universe is GROWTH_WATCHLIST.
 
 RISK_CONFIG = RiskConfig(
     max_position_pct=0.20,
@@ -116,47 +118,50 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
         logger.info("Market is closed. Nothing to do. (Use --dry-run to preview any day.)")
         return
 
-    # Cash sweep — liquidate SGOV back to cash BEFORE the agent decides, so it
-    # reasons over full cash exactly as before. SGOV is never an agent position.
+    # Hygiene: clear tiny sub-1-share "dust" left by past sells before we
+    # rebalance, so the book is clean and every real position can carry a stop.
     if not dry_run:
-        liquidate_cash_sweep(client)
+        flatten_fractional_dust(client)
 
     portfolio_value, cash = get_portfolio_value(client)
     cash_pct = cash / portfolio_value if portfolio_value > 0 else 1.0
     current_weights = get_current_weights(client)
     logger.info("Portfolio $%.2f | Cash %.1f%%", portfolio_value, cash_pct * 100)
 
-    # 1. Load price data for signals
-    logger.info("Fetching price data for %d tickers...", len(WATCHLIST))
-    prices = _load_prices(WATCHLIST)
+    # --- GROWTH SLEEVE — the only tier the LLM sizes ------------------------
+    # Core (VOO 60%) and cash (SGOV 20%) are structural constants set in
+    # portfolio_model. The LLM only sizes these higher-beta names, within a
+    # 20% budget; unused budget falls through to cash.
+    logger.info("Fetching price data for %d growth names...", len(GROWTH_WATCHLIST))
+    prices = _load_prices(GROWTH_WATCHLIST)
 
-    # 2. Compute deterministic signals
-    signal_bundles = compute_signals(prices, WATCHLIST)
+    signal_bundles = compute_signals(prices, GROWTH_WATCHLIST)
     signals_dict = signals_to_dict(signal_bundles)
-    logger.info("Signals computed for %d tickers", len(signal_bundles))
+    logger.info("Signals computed for %d growth names", len(signal_bundles))
 
-    # 3. Research agent
     logger.info("Running research agent...")
-    headlines = fetch_news_headlines(WATCHLIST)
-    research = run_research_agent(WATCHLIST, signals_dict, headlines)
+    headlines = fetch_news_headlines(GROWTH_WATCHLIST)
+    research = run_research_agent(GROWTH_WATCHLIST, signals_dict, headlines)
 
-    # 4. Allocation agent + challenger
-    logger.info("Running allocation agent...")
-    proposed_weights, objections = run_allocation_agent(
-        tickers=WATCHLIST,
+    logger.info("Running growth allocation agent...")
+    growth_current = {t: w for t, w in current_weights.items() if t in GROWTH_WATCHLIST}
+    proposed_growth, objections = run_allocation_agent(
+        tickers=GROWTH_WATCHLIST,
         signal_bundles=signal_bundles,
         research=research,
-        current_weights=current_weights,
+        current_weights=growth_current,
         cash_pct=cash_pct,
+        budget=GROWTH_BUDGET,
+        max_per_name=GROWTH_MAX_PER_NAME,
     )
-    logger.info("Proposed: %s", {t: f"{w:.1%}" for t, w in proposed_weights.items()})
+    logger.info("Proposed growth: %s", {t: f"{w:.1%}" for t, w in proposed_growth.items()})
     if objections:
         logger.info("Challenger objections: %s", objections)
 
-    # 5. Risk gate — deterministic, has veto power
+    # Risk gate on the growth sleeve (per-name cap, daily-loss halt, PDT guard).
     try:
-        final_weights = apply_risk_gate(
-            proposed_weights=proposed_weights,
+        growth_final = apply_risk_gate(
+            proposed_weights=proposed_growth,
             portfolio_value=portfolio_value,
             portfolio_value_open=state.portfolio_value_open or portfolio_value,
             equity=portfolio_value,
@@ -166,11 +171,14 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
         )
     except RiskVeto as e:
         logger.warning("RISK VETO: %s", e)
-        final_weights = {}
+        growth_final = {}
 
-    # 5b. Turnover control — hold positions within the no-trade band to cut churn
-    if final_weights:
-        final_weights = apply_turnover_control(current_weights, final_weights, RISK_CONFIG)
+    # Compose the full portfolio target: 60% VOO core + growth sleeve + SGOV.
+    final_weights = compose_target_weights(growth_final)
+
+    # Turnover control spreads the move toward target over several cycles — a
+    # gradual, DCA-like build into the core rather than one jarring rotation.
+    final_weights = apply_turnover_control(current_weights, final_weights, RISK_CONFIG)
 
     # 6. Execute rebalance
     orders_placed = []
@@ -194,13 +202,6 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
     else:
         logger.info("No trades — holding current positions.")
 
-    # 6b. Cash sweep — park cash the agent chose not to deploy into SGOV so it
-    # earns yield instead of sitting idle. Runs after stops are set. Value-neutral
-    # (cash -> T-bill ETF), so it does not change portfolio_value.
-    if not dry_run:
-        _, cash_after = get_portfolio_value(client)
-        sweep_excess_cash(portfolio_value, cash_after, client=client)
-
     # 7. Journal entry
     research_dict = {
         t: {"sentiment": r.sentiment, "summary": r.summary, "flags": r.flags}
@@ -211,10 +212,10 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
     )
     log_decision(
         run_date=today,
-        watchlist=WATCHLIST,
+        watchlist=GROWTH_WATCHLIST,
         signals=signals_dict,
         research=research_dict,
-        proposed_weights=proposed_weights,
+        proposed_weights=proposed_growth,
         objections=objections,
         final_weights=final_weights,
         orders=orders_placed,

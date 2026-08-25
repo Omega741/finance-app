@@ -23,10 +23,19 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Cash-equivalent tickers used only to park idle cash (see agent/cash_sweep.py).
+# Cash-equivalent tickers used only to park idle cash (see portfolio_model.py).
 # They are NOT equity positions: skip trailing-stop enforcement for them —
 # a 7% stop on a T-bill ETF is meaningless and would churn.
 CASH_EQUIVALENTS = {"SGOV"}
+
+# Core buy-and-hold tier (broad index). Deliberately carries NO trailing stop:
+# the core is meant to ride through drawdowns and compound long-term, and a
+# stop would both defeat that and realize taxable gains. Only the growth sleeve
+# is stop-protected.
+CORE_HOLDINGS = {"VOO"}
+
+# Union of everything execution must NOT place a protective stop on.
+NO_STOP = CASH_EQUIVALENTS | CORE_HOLDINGS
 
 
 class MissingStopLoss(Exception):
@@ -236,8 +245,8 @@ def ensure_trailing_stops(trail_percent: float, client=None) -> list[dict]:
 
     placed: list[dict] = []
     for sym, qty in get_position_qtys(client).items():
-        if sym in CASH_EQUIVALENTS:
-            continue  # cash-parking layer, not an equity position — no stop
+        if sym in NO_STOP:
+            continue  # cash-parking layer or buy-and-hold core — no stop
         whole = int(qty)  # floor for long positions
         if whole < 1:
             logger.warning("%s position is fractional-only (%.4f) — cannot place a "
@@ -335,6 +344,36 @@ def rebalance_to_weights(
     ensure_trailing_stops(stop_loss_pct * 100.0, client)
 
     return results
+
+
+def flatten_fractional_dust(client=None, min_dollars: float = 50.0) -> list[dict]:
+    """
+    Sell off tiny sub-1-share leftover positions ("dust") that accumulate as
+    residue from earlier sells. These can't carry a broker stop (needs whole
+    shares) and just clutter the book. Skips core/cash tickers. Returns a list
+    of {ticker, qty} flattened.
+
+    Only touches positions that are BOTH fractional (<1 share) AND worth less
+    than min_dollars — i.e. genuine dust, never a real holding.
+    """
+    if client is None:
+        client = get_alpaca_client()
+    flattened: list[dict] = []
+    for p in client.get_all_positions():
+        sym = p.symbol
+        if sym in NO_STOP:
+            continue
+        qty = float(p.qty)
+        mv = abs(float(p.market_value))
+        if 0 < qty < 1 and mv < min_dollars:
+            cancel_orders_for_symbol(sym, client)
+            try:
+                _market_order(sym, "sell", qty, client)
+                flattened.append({"ticker": sym, "qty": qty})
+                logger.info("Flattened dust: %s %.6f sh ($%.2f)", sym, qty, mv)
+            except Exception as e:
+                logger.warning("Dust flatten failed for %s: %s", sym, e)
+    return flattened
 
 
 def is_market_open(client=None) -> bool:
