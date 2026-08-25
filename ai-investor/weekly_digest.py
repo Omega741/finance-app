@@ -9,7 +9,7 @@ question that matters: is it actually beating just buying the index?
     table has filled in).
   - Benchmarks total and trailing-week return against SPY over the SAME dates.
   - Reports current and max drawdown.
-  - Prints to console and pushes a markdown report to Odysseus (best-effort).
+  - Prints the report to the console.
 
 Run standalone any day (no market or broker needed — reads the journal):
     python weekly_digest.py
@@ -33,8 +33,6 @@ from dotenv import load_dotenv
 load_dotenv(_HERE / ".env")
 
 import yfinance as yf
-
-from agent import odysseus_sync
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("weekly_digest")
@@ -166,8 +164,6 @@ def _verdict(total, spy_total, week, spy_week, max_dd) -> str:
 def main() -> None:
     report = build_digest()
     print("\n" + report + "\n")
-    if odysseus_sync.is_paired():
-        odysseus_sync.push_document(f"Weekly Digest {date.today()}", report)
 
 
 if __name__ == "__main__":

@@ -42,13 +42,6 @@ LLM_MODEL=qwen3.5:9b
 LLM_BACKEND=anthropic       # paid API
 ```
 
-## Optional: Odysseus pairing
-
-If you run [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus), set
-`ODYSSEUS_URL` and `ODYSSEUS_API_TOKEN` in `.env` and each day's decision report
-is pushed to the Odysseus web UI (viewable on your phone too). Pairing is
-best-effort: if Odysseus is down, trading and the local journal are unaffected.
-
 ## Architecture
 
 ```
@@ -65,7 +58,6 @@ agent/            Paper trading loop (Alpaca paper account)
   allocation.py   LLM: target weights + a challenger that argues against them
   execution.py    Alpaca paper orders — every buy requires a stop-loss
   journal.py      DuckDB journal + LLM narrative entry
-  odysseus_sync.py Best-effort push of the daily report to Odysseus (optional)
 
 paper_trader.py   Main daily orchestration loop (supports --dry-run)
 status.py         Read-only snapshot of the paper account (value, P/L, positions)

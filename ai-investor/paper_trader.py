@@ -28,9 +28,9 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-# Make the script runnable from ANY working directory (e.g. an Odysseus
-# scheduled task or Windows Task Scheduler). Anchor cwd, import path, and
-# config to this file's own folder before importing anything local.
+# Make the script runnable from ANY working directory (e.g. a Windows Task
+# Scheduler job). Anchor cwd, import path, and config to this file's own
+# folder before importing anything local.
 _HERE = Path(__file__).resolve().parent
 os.chdir(_HERE)
 sys.path.insert(0, str(_HERE))
@@ -57,7 +57,6 @@ from agent.portfolio_model import (
     GROWTH_WATCHLIST, GROWTH_BUDGET, GROWTH_MAX_PER_NAME, compose_target_weights,
 )
 from agent.llm import backend_info
-from agent import odysseus_sync
 
 logging.basicConfig(
     level=logging.INFO,
@@ -224,18 +223,6 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False) -> None:
     )
     logger.info("Journal entry saved.")
     logger.info("Notes: %s", notes)
-
-    # 8. Pair to Odysseus — push the decision report to the web UI (best-effort)
-    if odysseus_sync.is_paired():
-        odysseus_sync.push_decision(
-            run_date=today,
-            final_weights=final_weights,
-            objections=objections,
-            orders=orders_placed,
-            portfolio_value=portfolio_value,
-            research=research_dict,
-            notes=notes,
-        )
 
     logger.info("=== Cycle complete ===")
 
