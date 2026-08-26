@@ -185,7 +185,7 @@ export default function Budget({ transactions, targets, onSetTarget, onAddGoal, 
         <p className="chart-hint">
           TFS Bill Pay only <em>processes</em> your payments — it doesn't hold your plan total, so it
           can't show progress. Get your exact figures free at the National Data Center
-          (13datacenter.com): total paid in, claims, and balance. Enter them here to track it.
+          (ndc.org): total paid in, claims, and balance. Enter them here to track it.
         </p>
         <div className="stat-grid">
           <div className="stat-card">
