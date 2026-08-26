@@ -5,6 +5,7 @@ import { parseCSV } from './utils/csvParser';
 import CSVUpload from './components/CSVUpload';
 import Dashboard from './components/Dashboard';
 import Transactions from './components/Transactions';
+import Budget from './components/Budget';
 import SavingsGoals from './components/SavingsGoals';
 import NetWorth from './components/NetWorth';
 import Chat from './components/Chat';
@@ -12,6 +13,7 @@ import Chat from './components/Chat';
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'transactions', label: 'Transactions' },
+  { id: 'budget', label: 'Budget' },
   { id: 'networth', label: 'Net Worth' },
   { id: 'goals', label: 'Goals' },
   { id: 'chat', label: 'AI Chat' },
@@ -46,6 +48,15 @@ function loadOverrides() {
   }
 }
 
+// Monthly budget targets per category, plus special keys __income/__savings/__sinking.
+function loadBudgetTargets() {
+  try {
+    return JSON.parse(localStorage.getItem('finance_budget_targets') || '{}');
+  } catch {
+    return {};
+  }
+}
+
 function fmtTimestamp(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -59,6 +70,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState(stored.lastUpdated);
   const [goals, setGoals] = useState(loadGoals);
   const [overrides, setOverrides] = useState(loadOverrides);
+  const [budgetTargets, setBudgetTargets] = useState(loadBudgetTargets);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [uploadError, setUploadError] = useState('');
 
@@ -69,6 +81,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('finance_category_overrides', JSON.stringify(overrides));
   }, [overrides]);
+
+  useEffect(() => {
+    localStorage.setItem('finance_budget_targets', JSON.stringify(budgetTargets));
+  }, [budgetTargets]);
+
+  const setBudgetTarget = (category, value) => {
+    if (category === '__reset') return setBudgetTargets({});
+    setBudgetTargets(prev => ({ ...prev, [category]: value }));
+  };
 
   // Transactions with any manual category corrections applied.
   const displayed = useMemo(
@@ -156,6 +177,15 @@ export default function App() {
 
             {activeTab === 'dashboard' && <Dashboard transactions={displayed} onRecategorize={recategorize} />}
             {activeTab === 'transactions' && <Transactions transactions={displayed} onRecategorize={recategorize} />}
+            {activeTab === 'budget' && (
+              <Budget
+                transactions={displayed}
+                targets={budgetTargets}
+                onSetTarget={setBudgetTarget}
+                onAddGoal={addGoal}
+                goals={goals}
+              />
+            )}
             {activeTab === 'networth' && <NetWorth transactions={displayed} />}
             {activeTab === 'goals' && (
               <SavingsGoals

@@ -618,6 +618,72 @@ p { line-height: 1.6; }
 }
 .recat-select:hover { border-color: var(--blue); }
 
+/* ---- Budget ---- */
+.budget-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.budget-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.budget-income-input {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 0.15rem;
+}
+.budget-list { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem; }
+.budget-row {
+  display: grid;
+  grid-template-columns: 110px 90px 1fr 70px 90px;
+  align-items: center;
+  gap: 0.6rem;
+}
+.budget-cat { font-size: 0.85rem; color: var(--text-muted); text-transform: capitalize; }
+.budget-target-input {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+  width: 100%;
+}
+.budget-target-input:hover { border-color: var(--blue); }
+.budget-actual { font-size: 0.85rem; color: var(--text); text-align: right; }
+.budget-diff { font-size: 0.8rem; text-align: right; white-space: nowrap; }
+.budget-total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.budget-total-row > span:first-child { color: var(--text-muted); margin-right: auto; }
+.ef-steps { margin: 0.5rem 0 1rem; padding-left: 1.2rem; color: var(--text-muted); font-size: 0.88rem; }
+.ef-steps li { margin: 0.35rem 0; line-height: 1.4; }
+
+@media (max-width: 640px) {
+  .budget-row { grid-template-columns: 90px 70px 1fr 60px; }
+  .budget-row .budget-diff { display: none; }
+}
+
 /* ---- Savings Goals ---- */
 .goal-form-card {
   background: var(--surface);

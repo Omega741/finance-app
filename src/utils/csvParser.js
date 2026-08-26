@@ -311,6 +311,20 @@ export function getCategoryTotals(transactions) {
     .map(([category, total]) => ({ category, total }));
 }
 
+export function getMonths(transactions) {
+  return [...new Set(transactions.map(t => t.month))].sort();
+}
+
+// { category: totalSpent } for debits in a single month (YYYY-MM).
+export function getMonthlyCategoryTotals(transactions, month) {
+  const map = {};
+  for (const t of transactions) {
+    if (t.isCredit || t.month !== month) continue;
+    map[t.category] = (map[t.category] || 0) + Math.abs(t.amount);
+  }
+  return map;
+}
+
 export function getNetWorthTrend(transactions) {
   const monthly = getMonthlyData(transactions);
   let cumulative = 0;
