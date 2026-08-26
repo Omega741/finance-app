@@ -54,8 +54,10 @@ from agent.execution import (
 )
 from agent.journal import log_decision, log_order, log_equity, generate_journal_entry
 from agent.portfolio_model import (
-    GROWTH_WATCHLIST, GROWTH_BUDGET, GROWTH_MAX_PER_NAME, compose_target_weights,
+    GROWTH_WATCHLIST, GROWTH_BUDGET, GROWTH_MAX_PER_NAME, EARNINGS_AVOID_DAYS,
+    compose_target_weights,
 )
+from agent.earnings import apply_earnings_guard
 from agent.llm import backend_info
 
 logging.basicConfig(
@@ -174,6 +176,12 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False,
     except RiskVeto as e:
         logger.warning("RISK VETO: %s", e)
         growth_final = {}
+
+    # Earnings guard: flatten any growth name reporting within the window — the
+    # one overnight-gap a resting stop can't cover. Freed budget falls to cash.
+    growth_final, earnings_flags = apply_earnings_guard(growth_final, EARNINGS_AVOID_DAYS, today)
+    if earnings_flags:
+        objections = list(objections) + [f"Earnings guard flattened: {'; '.join(earnings_flags)}"]
 
     # Compose the full portfolio target: 60% VOO core + growth sleeve + SGOV.
     final_weights = compose_target_weights(growth_final)

@@ -36,6 +36,12 @@ CORE_WEIGHT = 0.60
 GROWTH_BUDGET = 0.20      # total sleeve size the LLM allocates within
 GROWTH_MAX_PER_NAME = 0.10  # no single growth name > half the sleeve
 
+# Earnings avoidance: flatten a growth name if it reports within this many days.
+# The only overnight gap a resting stop can't cover; kept tight so we're not out
+# of a name longer than necessary (research: overnight exposure is otherwise a
+# feature, not a risk to routinely dodge).
+EARNINGS_AVOID_DAYS = 2
+
 # Higher-beta names the growth sleeve picks among. Deliberately excludes the
 # defensive/value names (JPM, JNJ, XOM, UNH, BRK-B) — those are already held
 # inside VOO, so putting them here too would just dilute back toward the index.
