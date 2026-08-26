@@ -36,6 +36,7 @@ const DINING_KEYWORDS = [
   'kfc', 'in-n-out', 'in n out', 'senor taco', 'arby', 'carls jr', "carl's",
   'krispy kreme', 'einstein', 'barros', 'crumbl', 'saddle bronc', 'knuckle',
   'forefathers', 'dickey', 'melty', 'sauce  inc', 'jimmy g', 'bbq', 'nakedq',
+  'tst*', 'culver', 'mellow mushroom', 'einsteinbros',
 ];
 
 const SUBSCRIPTION_KEYWORDS = [
