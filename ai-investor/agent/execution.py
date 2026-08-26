@@ -314,13 +314,19 @@ def rebalance_to_weights(
     # are not locked by the open stop order.
     for ticker, notional, target in sells:
         cancel_orders_for_symbol(ticker, client)
-        price = latest_price(ticker)
-        if not price:
-            continue
         held = qtys.get(ticker, 0.0)
+        if held <= 0:
+            continue
         if target <= 0.0:
-            sell_qty = held            # full exit (may be fractional — OK for sells)
+            # Full exit — sell the whole position at market. Don't require a
+            # quote: a momentary quote failure must NOT leave an off-target
+            # position stranded (which over-invests the book into margin).
+            sell_qty = held
         else:
+            price = latest_price(ticker)
+            if not price:
+                logger.warning("No quote for %s — skipping partial trim this cycle", ticker)
+                continue
             sell_qty = min(held, round(notional / price, 4))
         if sell_qty <= 0:
             continue
