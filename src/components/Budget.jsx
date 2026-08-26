@@ -26,14 +26,6 @@ export default function Budget({ transactions, targets, onSetTarget, onAddGoal, 
   const savings = targets.__savings ?? SAVINGS_TARGET;
   const sinking = targets.__sinking ?? SINKING_TARGET;
 
-  // Chapter 13 payoff tracker (TFS only shows payments, not the plan total).
-  const ch13Payment = targets.__ch13_payment ?? 806;
-  const ch13Total = targets.__ch13_total ?? 0;
-  const ch13Paid = targets.__ch13_paid ?? 0;
-  const ch13Pct = ch13Total > 0 ? Math.min((ch13Paid / ch13Total) * 100, 100) : 0;
-  const ch13Remaining = Math.max(ch13Total - ch13Paid, 0);
-  const ch13MonthsLeft = ch13Payment > 0 && ch13Total > 0 ? Math.ceil(ch13Remaining / ch13Payment) : null;
-
   const targetFor = (cat) => targets[cat] ?? RECOMMENDED_TARGETS[cat] ?? 0;
 
   const rows = BUDGET_CATEGORIES
@@ -47,13 +39,16 @@ export default function Budget({ transactions, targets, onSetTarget, onAddGoal, 
 
   const alreadyHasEF = goals?.some((g) => /emergency/i.test(g.name));
 
+  // The savings-first plan: a $1,000 starter cushion, then one month of essentials.
   const createEmergencyGoal = () => {
-    onAddGoal({
-      id: Date.now().toString(),
-      name: 'Emergency Fund (starter)',
-      target: 1000,
-      current: 0,
-      deadline: '',
+    const now = Date.now();
+    [
+      { name: 'Emergency Fund (starter)', target: 1000 },
+      { name: 'Emergency Fund (1 month)', target: 4000 },
+    ].forEach((w, i) => {
+      if (!goals?.some((g) => g.name === w.name)) {
+        onAddGoal({ id: (now + i).toString(), name: w.name, target: w.target, current: 0, deadline: '' });
+      }
     });
   };
 
@@ -172,49 +167,15 @@ export default function Budget({ transactions, targets, onSetTarget, onAddGoal, 
           <li><strong>3 months (~$12,300)</strong> — full safety net, incl. income disruption.</li>
         </ol>
         {alreadyHasEF ? (
-          <p className="chart-hint">An emergency-fund goal already exists in your Goals tab. ✓</p>
+          <p className="chart-hint">Your emergency-fund goals are set up — track them in the Goals tab. ✓</p>
         ) : (
           <button type="button" className="btn-primary" onClick={createEmergencyGoal}>
-            Create emergency-fund goal
+            Set up my savings goals
           </button>
         )}
-      </div>
-
-      <div className="chart-card">
-        <h3 className="chart-title">Chapter 13 Payoff Progress</h3>
-        <p className="chart-hint">
-          TFS Bill Pay only <em>processes</em> your payments — it doesn't hold your plan total, so it
-          can't show progress. Get your exact figures free at the National Data Center
-          (ndc.org): total paid in, claims, and balance. Enter them here to track it.
-        </p>
-        <div className="stat-grid">
-          <div className="stat-card">
-            <span className="stat-label">Total plan amount</span>
-            <input className="budget-income-input" type="number" value={ch13Total}
-              onChange={(e) => onSetTarget('__ch13_total', parseFloat(e.target.value) || 0)} />
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Paid so far</span>
-            <input className="budget-income-input" type="number" value={ch13Paid}
-              onChange={(e) => onSetTarget('__ch13_paid', parseFloat(e.target.value) || 0)} />
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Monthly payment</span>
-            <input className="budget-income-input" type="number" value={ch13Payment}
-              onChange={(e) => onSetTarget('__ch13_payment', parseFloat(e.target.value) || 0)} />
-          </div>
-        </div>
-        <div className="category-bar-track" style={{ height: '14px', marginTop: '1rem' }}>
-          <div className="category-bar-fill" style={{ width: `${ch13Pct}%`, background: 'var(--green)' }} />
-        </div>
-        <div className="budget-total-row">
-          <span>{ch13Pct.toFixed(0)}% paid</span>
-          <span>{fmt0(ch13Remaining)} remaining</span>
-          {ch13MonthsLeft != null && <span>~{ch13MonthsLeft} payments left</span>}
-        </div>
-        <p className="chart-hint">
-          Note: whether paying extra actually finishes it sooner depends on your plan type (100% vs
-          partial) — confirm with your trustee/attorney before paying more.
+        <p className="chart-hint" style={{ marginTop: '0.75rem' }}>
+          Your Chapter 13 payoff — creditor breakdown, progress, and a finish-early calculator —
+          now lives in its own <strong>Chapter 13</strong> tab.
         </p>
       </div>
     </div>

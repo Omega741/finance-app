@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { parseCSV } from './utils/csvParser';
+import { parseClaimSummary } from './utils/ch13';
 import CSVUpload from './components/CSVUpload';
 import Dashboard from './components/Dashboard';
 import Transactions from './components/Transactions';
 import Budget from './components/Budget';
+import Ch13 from './components/Ch13';
 import SavingsGoals from './components/SavingsGoals';
 import NetWorth from './components/NetWorth';
 import Chat from './components/Chat';
@@ -14,6 +16,7 @@ const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'budget', label: 'Budget' },
+  { id: 'ch13', label: 'Chapter 13' },
   { id: 'networth', label: 'Net Worth' },
   { id: 'goals', label: 'Goals' },
   { id: 'chat', label: 'AI Chat' },
@@ -57,6 +60,15 @@ function loadBudgetTargets() {
   }
 }
 
+// Chapter 13 claim data imported from the NDC Claim Summary CSV (stays local).
+function loadCh13() {
+  try {
+    return JSON.parse(localStorage.getItem('finance_ch13_claims') || '[]');
+  } catch {
+    return [];
+  }
+}
+
 function fmtTimestamp(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -71,6 +83,7 @@ export default function App() {
   const [goals, setGoals] = useState(loadGoals);
   const [overrides, setOverrides] = useState(loadOverrides);
   const [budgetTargets, setBudgetTargets] = useState(loadBudgetTargets);
+  const [ch13Claims, setCh13Claims] = useState(loadCh13);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [uploadError, setUploadError] = useState('');
 
@@ -86,9 +99,22 @@ export default function App() {
     localStorage.setItem('finance_budget_targets', JSON.stringify(budgetTargets));
   }, [budgetTargets]);
 
+  useEffect(() => {
+    localStorage.setItem('finance_ch13_claims', JSON.stringify(ch13Claims));
+  }, [ch13Claims]);
+
   const setBudgetTarget = (category, value) => {
     if (category === '__reset') return setBudgetTargets({});
     setBudgetTargets(prev => ({ ...prev, [category]: value }));
+  };
+
+  const handleCh13Import = (text) => {
+    try {
+      setCh13Claims(parseClaimSummary(text));
+      setUploadError('');
+    } catch (err) {
+      setUploadError(err.message);
+    }
   };
 
   // Transactions with any manual category corrections applied.
@@ -184,6 +210,14 @@ export default function App() {
                 onSetTarget={setBudgetTarget}
                 onAddGoal={addGoal}
                 goals={goals}
+              />
+            )}
+            {activeTab === 'ch13' && (
+              <Ch13
+                claims={ch13Claims}
+                onImport={handleCh13Import}
+                targets={budgetTargets}
+                onSetTarget={setBudgetTarget}
               />
             )}
             {activeTab === 'networth' && <NetWorth transactions={displayed} />}
