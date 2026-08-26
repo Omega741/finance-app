@@ -26,6 +26,14 @@ export default function Budget({ transactions, targets, onSetTarget, onAddGoal, 
   const savings = targets.__savings ?? SAVINGS_TARGET;
   const sinking = targets.__sinking ?? SINKING_TARGET;
 
+  // Chapter 13 payoff tracker (TFS only shows payments, not the plan total).
+  const ch13Payment = targets.__ch13_payment ?? 806;
+  const ch13Total = targets.__ch13_total ?? 0;
+  const ch13Paid = targets.__ch13_paid ?? 0;
+  const ch13Pct = ch13Total > 0 ? Math.min((ch13Paid / ch13Total) * 100, 100) : 0;
+  const ch13Remaining = Math.max(ch13Total - ch13Paid, 0);
+  const ch13MonthsLeft = ch13Payment > 0 && ch13Total > 0 ? Math.ceil(ch13Remaining / ch13Payment) : null;
+
   const targetFor = (cat) => targets[cat] ?? RECOMMENDED_TARGETS[cat] ?? 0;
 
   const rows = BUDGET_CATEGORIES
@@ -170,6 +178,44 @@ export default function Budget({ transactions, targets, onSetTarget, onAddGoal, 
             Create emergency-fund goal
           </button>
         )}
+      </div>
+
+      <div className="chart-card">
+        <h3 className="chart-title">Chapter 13 Payoff Progress</h3>
+        <p className="chart-hint">
+          TFS Bill Pay only <em>processes</em> your payments — it doesn't hold your plan total, so it
+          can't show progress. Get your exact figures free at the National Data Center
+          (13datacenter.com): total paid in, claims, and balance. Enter them here to track it.
+        </p>
+        <div className="stat-grid">
+          <div className="stat-card">
+            <span className="stat-label">Total plan amount</span>
+            <input className="budget-income-input" type="number" value={ch13Total}
+              onChange={(e) => onSetTarget('__ch13_total', parseFloat(e.target.value) || 0)} />
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">Paid so far</span>
+            <input className="budget-income-input" type="number" value={ch13Paid}
+              onChange={(e) => onSetTarget('__ch13_paid', parseFloat(e.target.value) || 0)} />
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">Monthly payment</span>
+            <input className="budget-income-input" type="number" value={ch13Payment}
+              onChange={(e) => onSetTarget('__ch13_payment', parseFloat(e.target.value) || 0)} />
+          </div>
+        </div>
+        <div className="category-bar-track" style={{ height: '14px', marginTop: '1rem' }}>
+          <div className="category-bar-fill" style={{ width: `${ch13Pct}%`, background: 'var(--green)' }} />
+        </div>
+        <div className="budget-total-row">
+          <span>{ch13Pct.toFixed(0)}% paid</span>
+          <span>{fmt0(ch13Remaining)} remaining</span>
+          {ch13MonthsLeft != null && <span>~{ch13MonthsLeft} payments left</span>}
+        </div>
+        <p className="chart-hint">
+          Note: whether paying extra actually finishes it sooner depends on your plan type (100% vs
+          partial) — confirm with your trustee/attorney before paying more.
+        </p>
       </div>
     </div>
   );
