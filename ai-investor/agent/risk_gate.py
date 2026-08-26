@@ -37,6 +37,12 @@ class RiskConfig:
     pdt_max_day_trades: int = 3       # max round trips in a rolling 5-day window
     no_trade_band: float = 0.04       # hold a position unless it drifts > 4pp from target
     max_turnover_per_cycle: float = 0.30  # cap total weight change/cycle once invested
+    # Volatility-scaled trailing stop for the growth sleeve (see atr_trail_percent).
+    # Research: stops help momentum names (Kaminski & Lo); width should track
+    # volatility (ATR), not be a fixed number.
+    atr_stop_multiple: float = 3.0    # trailing stop = 3x the 14-day ATR
+    atr_stop_floor_pct: float = 0.05  # never tighter than 5%
+    atr_stop_cap_pct: float = 0.20    # never wider than 20%
 
 
 @dataclass
@@ -119,6 +125,28 @@ def apply_risk_gate(
 
     logger.info("Risk gate passed. Weights: %s", {t: f"{w:.1%}" for t, w in capped.items()})
     return capped
+
+
+def atr_trail_percent(atr_14: float, price: float,
+                      config: RiskConfig | None = None) -> float:
+    """
+    Volatility-scaled trailing-stop width for a growth name, as a PERCENT
+    (e.g. 8.5 for 8.5%). Sets the stop at `atr_stop_multiple` x the 14-day ATR,
+    then clamps to [floor, cap] so it's never absurdly tight or loose.
+
+    A fixed % is wrong in both regimes — too loose when the name is calm (gives
+    back profit) and too tight when it's volatile (whipsawed out on noise). ATR
+    tracks each name's actual volatility and updates as conditions change.
+
+    Falls back to the fixed stop_loss_pct if ATR/price data is unusable, so a
+    data hiccup can never leave a position unsized.
+    """
+    cfg = config or RiskConfig()
+    if not price or price <= 0 or not atr_14 or atr_14 <= 0:
+        return cfg.stop_loss_pct * 100.0
+    raw = cfg.atr_stop_multiple * (atr_14 / price)
+    clamped = max(cfg.atr_stop_floor_pct, min(cfg.atr_stop_cap_pct, raw))
+    return round(clamped * 100.0, 2)
 
 
 def compute_stop_price(entry_price: float, stop_loss_pct: float | None = None,

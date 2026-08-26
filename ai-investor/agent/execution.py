@@ -221,19 +221,27 @@ def _wait_for_fills(order_ids: list[str], client, timeout: float = 15.0) -> None
 # ---------------------------------------------------------------------------
 # Trailing-stop enforcement
 # ---------------------------------------------------------------------------
-def ensure_trailing_stops(trail_percent: float, client=None) -> list[dict]:
+def ensure_trailing_stops(trail_percent: float, client=None,
+                          trail_overrides: dict[str, float] | None = None) -> list[dict]:
     """
     Guarantee every position has a correctly-sized trailing-stop sell.
 
     - Preserves an existing trailing stop whose qty already matches the
-      whole-share position size (so its trail keeps ratcheting up).
+      whole-share position size (so its trail keeps ratcheting up — resetting
+      it would drop the high-water mark and could loosen protection).
     - For positions with no stop, or a stop whose size is stale, cancels any
       existing and places a fresh trailing stop for floor(position qty).
+
+    `trail_overrides` gives a per-ticker trail percent (e.g. ATR-based); any
+    ticker not present uses the `trail_percent` default. Note: because existing
+    stops are preserved, an updated override only applies when a stop is newly
+    placed (new or resized position), by design.
 
     Returns a list of {ticker, qty, order_id} for stops placed this call.
     """
     if client is None:
         client = get_alpaca_client()
+    trail_overrides = trail_overrides or {}
 
     # map existing OPEN trailing-stop sells by symbol
     existing: dict[str, object] = {}
@@ -257,7 +265,8 @@ def ensure_trailing_stops(trail_percent: float, client=None) -> list[dict]:
             continue  # already protected at the right size; leave trail intact
         if ex is not None:
             cancel_orders_for_symbol(sym, client)
-        oid = place_trailing_stop(sym, whole, trail_percent, client)
+        sym_trail = trail_overrides.get(sym, trail_percent)
+        oid = place_trailing_stop(sym, whole, sym_trail, client)
         if oid:
             placed.append({"ticker": sym, "qty": whole, "order_id": oid})
         else:
@@ -274,6 +283,7 @@ def rebalance_to_weights(
     stop_loss_pct: float = 0.07,
     min_trade_dollars: float = 50.0,
     client=None,
+    trail_overrides: dict[str, float] | None = None,
 ) -> list[OrderResult]:
     """
     Rebalance to target_weights using WHOLE-SHARE buys, then ensure every
@@ -332,7 +342,8 @@ def rebalance_to_weights(
             continue
         try:
             r = _market_order(ticker, "buy", qty, client)
-            r.stop_price = round(price * (1.0 - stop_loss_pct), 2)
+            trail_frac = (trail_overrides or {}).get(ticker, stop_loss_pct * 100.0) / 100.0
+            r.stop_price = round(price * (1.0 - trail_frac), 2)
             results.append(r)
             buy_ids.append(r.order_id)
         except Exception as e:
@@ -341,7 +352,7 @@ def rebalance_to_weights(
     # Wait for buys to fill so positions reflect new size, then protect everything.
     if buy_ids:
         _wait_for_fills(buy_ids, client)
-    ensure_trailing_stops(stop_loss_pct * 100.0, client)
+    ensure_trailing_stops(stop_loss_pct * 100.0, client, trail_overrides=trail_overrides)
 
     return results
 

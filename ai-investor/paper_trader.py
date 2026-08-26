@@ -45,7 +45,8 @@ from agent.signals import compute_signals, signals_to_dict
 from agent.research import run_research_agent, fetch_news_headlines
 from agent.allocation import run_allocation_agent
 from agent.risk_gate import (
-    apply_risk_gate, apply_turnover_control, RiskConfig, RiskState, RiskVeto,
+    apply_risk_gate, apply_turnover_control, atr_trail_percent,
+    RiskConfig, RiskState, RiskVeto,
 )
 from agent.execution import (
     get_alpaca_client, get_portfolio_value, get_current_weights,
@@ -143,6 +144,18 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False,
     signals_dict = signals_to_dict(signal_bundles)
     logger.info("Signals computed for %d growth names", len(signal_bundles))
 
+    # Volatility-scaled (ATR-based) trailing-stop width per growth name — tighter
+    # when a name is calm, wider when it's volatile, so we're neither giving back
+    # profit nor getting whipsawed out on noise. Core/cash carry no stop at all.
+    trail_overrides: dict[str, float] = {}
+    for t, sb in signal_bundles.items():
+        try:
+            trail_overrides[t] = atr_trail_percent(sb.atr_14, float(prices[t].iloc[-1]), RISK_CONFIG)
+        except Exception:
+            pass
+    if trail_overrides:
+        logger.info("ATR trailing stops: %s", {t: f"{p:.1f}%" for t, p in trail_overrides.items()})
+
     logger.info("Running research agent...")
     headlines = fetch_news_headlines(GROWTH_WATCHLIST)
     research = run_research_agent(GROWTH_WATCHLIST, signals_dict, headlines)
@@ -209,6 +222,7 @@ def run_daily_cycle(state: RiskState, dry_run: bool = False,
             stop_loss_pct=RISK_CONFIG.stop_loss_pct,
             min_trade_dollars=MIN_TRADE_DOLLARS,
             client=client,
+            trail_overrides=trail_overrides,
         )
         for r in order_results:
             orders_placed.append({
@@ -263,7 +277,19 @@ def main() -> None:
 
     if args.protect_only:
         client = get_alpaca_client()
-        placed = ensure_trailing_stops(RISK_CONFIG.stop_loss_pct * 100.0, client)
+        # ATR-size stops for held growth names; fall back to fixed on any hiccup.
+        from agent.execution import get_position_qtys
+        overrides: dict[str, float] = {}
+        held_growth = [t for t in get_position_qtys(client) if t in GROWTH_WATCHLIST]
+        if held_growth:
+            try:
+                prices = _load_prices(held_growth)
+                for t, sb in compute_signals(prices, held_growth).items():
+                    overrides[t] = atr_trail_percent(sb.atr_14, float(prices[t].iloc[-1]), RISK_CONFIG)
+            except Exception as e:
+                logger.warning("ATR sizing failed (%s); using fixed stop.", e)
+        placed = ensure_trailing_stops(RISK_CONFIG.stop_loss_pct * 100.0, client,
+                                       trail_overrides=overrides)
         if placed:
             for p in placed:
                 logger.info("Protected %s with trailing stop (%d sh)", p["ticker"], p["qty"])
