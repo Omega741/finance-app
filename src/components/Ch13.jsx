@@ -18,7 +18,7 @@ export default function Ch13({ claims, onImport, targets, onSetTarget }) {
     e.target.value = '';
   };
 
-  const payment = targets.__ch13_payment ?? 805;
+  const payment = targets.__ch13_payment ?? 806;
 
   const importBtn = (
     <label className="btn-primary" style={{ cursor: 'pointer' }}>

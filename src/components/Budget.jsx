@@ -8,7 +8,7 @@ const signed = (v) => (v < 0 ? '-' : '+') + '$' + Math.round(Math.abs(v)).toLoca
 
 // Research-backed monthly targets (see the recovery plan). Editable in the UI.
 export const RECOMMENDED_TARGETS = {
-  housing: 2040, debt: 770, groceries: 425, utilities: 375, dining: 450,
+  housing: 2040, debt: 806, groceries: 425, utilities: 375, dining: 450,
   insurance: 131, transportation: 175, discretionary: 325, subscriptions: 110,
   healthcare: 85, pets: 70, education: 60,
 };
