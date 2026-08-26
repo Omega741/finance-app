@@ -1,14 +1,17 @@
 // MIT License - Copyright (c) 2024 Finance App
 
+import { useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { getMonthlyData, getCategoryTotals } from '../utils/csvParser';
+import CategoryDetail from './CategoryDetail';
 
 const fmt = (v) =>
   '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 const CATEGORY_COLORS = {
+  housing: '#9ae6b4',
   discretionary: '#63b3ed',
   groceries: '#f6e05e',
   dining: '#f6ad55',
@@ -16,11 +19,31 @@ const CATEGORY_COLORS = {
   utilities: '#76e4f7',
   debt: '#fc8181',
   transfer: '#a0aec0',
+  transportation: '#f687b3',
+  insurance: '#4fd1c5',
+  healthcare: '#feb2b2',
+  education: '#d6bcfa',
+  pets: '#fbd38d',
+  reimbursed: '#a3bffa',
 };
 
-export default function Dashboard({ transactions }) {
+export default function Dashboard({ transactions, onRecategorize }) {
+  const [detailCategory, setDetailCategory] = useState(null);
   const monthly = getMonthlyData(transactions);
   const categories = getCategoryTotals(transactions);
+
+  if (detailCategory) {
+    return (
+      <CategoryDetail
+        transactions={transactions}
+        category={detailCategory}
+        color={CATEGORY_COLORS[detailCategory] || '#8b949e'}
+        onBack={() => setDetailCategory(null)}
+        onRecategorize={onRecategorize}
+      />
+    );
+  }
+
   const totalIncome = transactions
     .filter(t => t.isCredit)
     .reduce((s, t) => s + t.amount, 0);
@@ -75,12 +98,19 @@ export default function Dashboard({ transactions }) {
 
       <div className="chart-card">
         <h3 className="chart-title">Spending by Category</h3>
+        <p className="chart-hint">Select a category to see every transaction in it.</p>
         <div className="category-list">
           {categories.map(({ category, total }) => {
             const pct = totalSpending > 0 ? (total / totalSpending) * 100 : 0;
             const color = CATEGORY_COLORS[category] || '#8b949e';
             return (
-              <div key={category} className="category-row">
+              <button
+                type="button"
+                key={category}
+                className="category-row category-row-btn"
+                onClick={() => setDetailCategory(category)}
+                title={`View all ${category} transactions`}
+              >
                 <span className="category-name">{category}</span>
                 <div className="category-bar-track">
                   <div
@@ -91,7 +121,8 @@ export default function Dashboard({ transactions }) {
                 <span className="category-amount">
                   {fmt(total)} <span className="category-pct">({pct.toFixed(1)}%)</span>
                 </span>
-              </div>
+                <span className="category-chevron">&rsaquo;</span>
+              </button>
             );
           })}
         </div>

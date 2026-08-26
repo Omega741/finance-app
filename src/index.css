@@ -435,6 +435,70 @@ p { line-height: 1.6; }
   font-weight: 400;
 }
 
+.category-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Clickable category rows (drill-down to detail) */
+.category-row-btn {
+  grid-template-columns: 130px 1fr auto auto;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.45rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background 0.15s ease;
+}
+.category-row-btn:hover { background: var(--surface-2); }
+.category-chevron {
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.chart-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: -0.75rem 0 1rem;
+}
+
+/* ---- Category Detail view ---- */
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.detail-back {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  transition: background 0.15s ease;
+}
+.detail-back:hover { background: var(--surface-2); }
+.detail-title-wrap { display: flex; align-items: center; gap: 0.6rem; }
+.detail-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+.detail-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: capitalize;
+}
+.detail-list .category-row { grid-template-columns: minmax(140px, 1.4fr) 2fr auto; }
+.merchant-count { color: var(--text-muted); font-weight: 400; font-size: 0.78rem; }
+
 /* ---- Transactions ---- */
 .txn-controls {
   display: flex;
@@ -532,6 +596,27 @@ p { line-height: 1.6; }
 .badge-debt          { background: rgba(248, 81, 73, 0.15);   color: var(--red); }
 .badge-transfer      { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
 .badge-discretionary { background: rgba(56, 139, 253, 0.15);  color: var(--blue); }
+.badge-housing       { background: rgba(154, 230, 180, 0.15); color: #9ae6b4; }
+.badge-transportation{ background: rgba(246, 135, 179, 0.15); color: #f687b3; }
+.badge-insurance     { background: rgba(79, 209, 197, 0.15);  color: #4fd1c5; }
+.badge-healthcare    { background: rgba(254, 178, 178, 0.15); color: #feb2b2; }
+.badge-education     { background: rgba(214, 188, 250, 0.15); color: #d6bcfa; }
+.badge-pets          { background: rgba(251, 211, 141, 0.15); color: #fbd38d; }
+.badge-reimbursed    { background: rgba(163, 191, 250, 0.15); color: #a3bffa; }
+
+/* Inline re-categorize dropdown */
+.recat-select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-transform: capitalize;
+  max-width: 140px;
+}
+.recat-select:hover { border-color: var(--blue); }
 
 /* ---- Savings Goals ---- */
 .goal-form-card {

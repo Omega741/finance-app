@@ -1,16 +1,18 @@
 // MIT License - Copyright (c) 2024 Finance App
 
 import { useState } from 'react';
+import { CATEGORY_OPTIONS } from '../utils/csvParser';
 
 const CATEGORIES = [
-  'all', 'income', 'groceries', 'dining', 'subscriptions',
-  'utilities', 'debt', 'transfer', 'discretionary',
+  'all', 'income', 'housing', 'groceries', 'dining', 'transportation',
+  'utilities', 'subscriptions', 'insurance', 'healthcare', 'education',
+  'debt', 'pets', 'transfer', 'reimbursed', 'discretionary',
 ];
 
 const fmt = (v) =>
   '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function Transactions({ transactions }) {
+export default function Transactions({ transactions, onRecategorize }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -61,7 +63,19 @@ export default function Transactions({ transactions }) {
                 <td className="txn-date">{t.date}</td>
                 <td className="txn-desc" title={t.description}>{t.description}</td>
                 <td>
-                  <span className={`badge badge-${t.category}`}>{t.category}</span>
+                  {onRecategorize && !t.isCredit ? (
+                    <select
+                      className={`recat-select recat-${t.category}`}
+                      value={t.category}
+                      onChange={e => onRecategorize(t.id, e.target.value)}
+                    >
+                      {CATEGORY_OPTIONS.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={`badge badge-${t.category}`}>{t.category}</span>
+                  )}
                 </td>
                 <td className={`txn-amount text-right ${t.isCredit ? 'green' : 'red'}`}>
                   {t.isCredit ? '+' : '-'}{fmt(t.amount)}

@@ -1,6 +1,6 @@
 // MIT License - Copyright (c) 2024 Finance App
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { parseCSV } from './utils/csvParser';
 import CSVUpload from './components/CSVUpload';
 import Dashboard from './components/Dashboard';
@@ -36,6 +36,16 @@ function loadGoals() {
   }
 }
 
+// Manual category overrides, keyed by transaction id. Persisted so your
+// corrections (e.g. reimbursed tuition) survive reloads and re-uploads.
+function loadOverrides() {
+  try {
+    return JSON.parse(localStorage.getItem('finance_category_overrides') || '{}');
+  } catch {
+    return {};
+  }
+}
+
 function fmtTimestamp(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -48,12 +58,26 @@ export default function App() {
   const [transactions, setTransactions] = useState(stored.transactions);
   const [lastUpdated, setLastUpdated] = useState(stored.lastUpdated);
   const [goals, setGoals] = useState(loadGoals);
+  const [overrides, setOverrides] = useState(loadOverrides);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [uploadError, setUploadError] = useState('');
 
   useEffect(() => {
     localStorage.setItem('finance_goals', JSON.stringify(goals));
   }, [goals]);
+
+  useEffect(() => {
+    localStorage.setItem('finance_category_overrides', JSON.stringify(overrides));
+  }, [overrides]);
+
+  // Transactions with any manual category corrections applied.
+  const displayed = useMemo(
+    () => transactions.map(t => (overrides[t.id] ? { ...t, category: overrides[t.id] } : t)),
+    [transactions, overrides]
+  );
+
+  const recategorize = (id, category) =>
+    setOverrides(prev => ({ ...prev, [id]: category }));
 
   const handleFileInput = (e) => {
     const file = e.target.files[0];
@@ -130,9 +154,9 @@ export default function App() {
               ))}
             </nav>
 
-            {activeTab === 'dashboard' && <Dashboard transactions={transactions} />}
-            {activeTab === 'transactions' && <Transactions transactions={transactions} />}
-            {activeTab === 'networth' && <NetWorth transactions={transactions} />}
+            {activeTab === 'dashboard' && <Dashboard transactions={displayed} onRecategorize={recategorize} />}
+            {activeTab === 'transactions' && <Transactions transactions={displayed} onRecategorize={recategorize} />}
+            {activeTab === 'networth' && <NetWorth transactions={displayed} />}
             {activeTab === 'goals' && (
               <SavingsGoals
                 goals={goals}
@@ -141,7 +165,7 @@ export default function App() {
                 onDelete={deleteGoal}
               />
             )}
-            {activeTab === 'chat' && <Chat transactions={transactions} />}
+            {activeTab === 'chat' && <Chat transactions={displayed} />}
           </>
         )}
       </main>

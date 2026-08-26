@@ -1,60 +1,123 @@
 // MIT License - Copyright (c) 2024 Finance App
 
+// Keywords are matched as substrings of the lowercased merchant description.
+// categorize() checks lists in a specific -> general ORDER and the first match
+// wins, so where two lists could both match (e.g. "frys fuel" vs "frys #5002"),
+// the ordering in categorize() decides. Tokens reflect how SoFi actually writes
+// merchant names (e.g. "FRYS #5002", "COX COMM PHX", "ROCKET MORTGAGE").
+
+// Checked BEFORE groceries so "frys fuel" lands in transportation, not groceries.
+const TRANSPORTATION_KEYWORDS = [
+  'fuel', 'gas station', 'chevron', 'circle k', 'quiktrip', 'qt ', 'shell oil',
+  'arco', 'exxon', 'mobil', 'texaco', 'valero', 'speedway', 'wawa', 'racetrac',
+  'car wash', 'blast off', "o'reilly", 'oreilly', 'autozone', 'auto parts',
+  'jiffy lube', 'discount tire', 'honda of', 'toyota of', 'parking', 'dmv',
+  'uber trip', 'lyft', 'metro transit',
+];
+
 const GROCERY_KEYWORDS = [
-  'kroger', 'safeway', 'whole foods', 'trader joe', 'walmart', 'costco',
-  'publix', 'aldi', 'wegmans', 'heb', 'meijer', 'sprouts', 'food lion',
-  'stop shop', 'giant', 'albertsons', 'winco', 'grocery', 'market basket',
-  'harris teeter', 'winn dixie', 'food 4 less', 'smart final', 'stater bros',
-  'vons', 'ralphs', 'frys food', 'shop rite', 'fresh market', 'natural grocers',
+  'kroger', 'safeway', 'whole foods', 'trader joe', 'walmart', 'wal-mart',
+  'wm supercenter', 'costco', 'publix', 'aldi', 'wegmans', 'heb', 'meijer',
+  'sprouts', 'food lion', 'stop shop', 'giant', 'albertsons', 'winco',
+  'grocery', 'frys', "fry's", 'harris teeter', 'winn dixie', 'food 4 less',
+  'smart final', 'stater bros', 'vons', 'ralphs', 'shop rite', 'fresh market',
+  'natural grocers', 'bashas', 'food city',
 ];
 
 const DINING_KEYWORDS = [
-  'restaurant', 'mcdonald', 'burger king', "wendy's", 'taco bell', 'chick-fil-a',
-  'starbucks', 'dunkin', 'chipotle', 'subway', 'domino', 'pizza hut', 'papa john',
-  'doordash', 'uber eats', 'grubhub', 'postmates',
-  'cafe', 'coffee', 'diner', 'grill', 'kitchen', 'eatery', 'bistro', 'steakhouse',
-  'sushi', 'panera', 'chilis', 'applebee', 'olive garden', 'red lobster', 'ihop',
-  "denny's", 'waffle house', 'cracker barrel', 'outback', 'longhorn',
-  'panda express', 'jack in the box', 'sonic drive', 'raising cane',
-  'whataburger', 'five guys', 'shake shack', 'dairy queen', 'popeyes', 'kfc',
+  'restaurant', 'mcdonald', 'burger king', "wendy's", 'taco bell', 'taco',
+  'chick-fil-a', 'chick fil', 'chickfila', 'starbucks', 'dunkin', 'chipotle',
+  'subway', 'domino', 'pizza', 'papa john', 'doordash', 'uber eats', 'grubhub',
+  'postmates', 'cafe', 'coffee', 'diner', 'grill', 'kitchen', 'eatery', 'bistro',
+  'steakhouse', 'sushi', 'panera', 'chili', 'applebee', 'olive garden',
+  'red lobster', 'redlobster', 'ihop', "denny's", 'waffle', 'cracker barrel',
+  'outback', 'longhorn', 'panda express', 'jack in the box', 'sonic', 'canes',
+  'whataburger', 'five guys', 'fiveguys', 'shake shack', 'dairy queen', 'popeyes',
+  'kfc', 'in-n-out', 'in n out', 'senor taco', 'arby', 'carls jr', "carl's",
+  'krispy kreme', 'einstein', 'barros', 'crumbl', 'saddle bronc', 'knuckle',
+  'forefathers', 'dickey', 'melty', 'sauce  inc', 'jimmy g', 'bbq', 'nakedq',
 ];
 
 const SUBSCRIPTION_KEYWORDS = [
   'netflix', 'hulu', 'disney', 'hbo max', 'peacock', 'paramount',
-  'amazon prime', 'amazon music', 'apple music', 'spotify', 'pandora',
-  'tidal', 'youtube premium', 'google one', 'icloud', 'dropbox',
-  'microsoft 365', 'office 365', 'adobe', 'canva', 'figma',
-  'subscription', 'membership', 'annual fee', 'monthly fee',
-  'patreon', 'discord nitro', 'xbox game pass', 'playstation plus',
-  'nintendo switch online', 'duolingo', 'headspace', 'calm', 'noom',
-  'peloton', 'beachbody',
+  'amazon prime', 'prime video', 'amazon music', 'apple music', 'apple.com',
+  'spotify', 'pandora', 'tidal', 'youtube premium', 'google one', 'icloud',
+  'dropbox', 'microsoft 365', 'office 365', 'adobe', 'canva', 'figma',
+  'subscription', 'membership', 'audible', 'simplisafe', 'anthropic', 'claude',
+  'patreon', 'discord nitro', 'xbox game pass', 'playstation plus', 'paddle',
+  'nintendo switch online', 'duolingo', 'headspace', 'noom', 'peloton',
 ];
 
 const UTILITY_KEYWORDS = [
   'electric', 'electricity', 'power co', 'energy', 'natural gas', 'gas co',
   'water', 'sewer', 'waste management', 'trash', 'garbage', 'recycling',
-  'internet', 'broadband', 'cable tv', 'satellite',
-  'verizon', 'at&t', 'att ', 't-mobile', 'tmobile', 'sprint', 'boost mobile',
-  'metro pcs', 'cricket wireless', 'comcast', 'xfinity', 'spectrum',
-  'cox communications', 'optimum', 'frontier', 'centurylink',
-  "pg&e", 'pge ', 'duke energy', 'con edison', 'coned', 'dominion energy',
+  'internet', 'broadband', 'cable', 'satellite', 'srp', 'salt river',
+  'city of mesa', 'aps ', 'verizon', 'at&t', 't-mobile', 'tmobile', 'sprint',
+  'boost mobile', 'metro pcs', 'cricket wireless', 'comcast', 'xfinity',
+  'spectrum', 'cox comm', 'cox communic', 'optimum', 'frontier', 'centurylink',
+  "pg&e", 'duke energy', 'con edison', 'coned', 'dominion energy',
   'southern company', 'entergy', 'ameren', 'exelon', 'pseg',
-  'phone bill', 'cell phone', 'wireless bill', 'utility bill',
+  'phone bill', 'cell phone', 'wireless bill', 'utility',
+];
+
+const HOUSING_KEYWORDS = [
+  'mortgage', 'rocket mortgage', 'apartment', 'leasing', 'realty', ' hoa',
+  'hoa ', 'cortina vista', 'property mgmt', 'property management',
+  'homeowners assoc', 'landlord',
+];
+
+const INSURANCE_KEYWORDS = [
+  'state farm', 'geico', 'progressive', 'allstate', 'insurance', 'usaa',
+  'farmers ins', 'liberty mutual', 'nationwide', 'aetna', 'cigna',
+  'blue cross', 'metlife',
+];
+
+const EDUCATION_KEYWORDS = [
+  'univ of phx', 'university', 'tuition', 'college', 'campus', 'coursera',
+  'udemy', 'edx', 'chegg',
+];
+
+// Checked BEFORE healthcare so "animal hospital" lands in pets, not healthcare.
+const PET_KEYWORDS = [
+  'petsmart', 'petco', 'chewy', 'animal hospi', 'animal hospital',
+  'veterinar', 'vet clinic', 'pet supplies', 'pet supermarket',
+];
+
+const HEALTHCARE_KEYWORDS = [
+  'pharmacy', 'cvs', 'walgreens', 'rite aid', 'cardio', 'cardiology',
+  'neurology', 'medical', 'clinic', 'hospital', 'dental', 'dentist', ' dds',
+  'optometry', 'urgent care', 'physicians', 'wellness', 'med*', 'labcorp',
+  'quest diag',
 ];
 
 const DEBT_KEYWORDS = [
-  'loan payment', 'mortgage payment', 'auto loan', 'car payment', 'student loan',
-  'credit card payment', 'card payment', 'minimum payment',
-  'chase credit', 'capital one', 'citibank', 'citi card', 'bank of america',
-  'wells fargo', 'discover card', 'american express', 'amex',
-  'synchrony', 'barclays', 'ally financial', 'navient', 'sallie mae',
-  'great lakes', 'fedloan', 'nelnet', 'mohela',
-  'sofi loan', 'sofi personal loan',
+  'loan payment', 'auto loan', 'car payment', 'student loan',
+  'credit card payment', 'card payment', 'minimum payment', 'tfs ',
+  'toyota financial', 'toyota fin', 'chase credit', 'capital one', 'citibank',
+  'citi card', 'bank of america', 'wells fargo', 'discover card',
+  'american express', 'amex', 'synchrony', 'barclays', 'ally financial',
+  'navient', 'sallie mae', 'great lakes', 'fedloan', 'nelnet', 'mohela',
+  'sofi loan', 'affirm', 'klarna', 'afterpay',
+];
+
+// Money moved to savings/investing accounts — not spending, not income.
+const TRANSFER_KEYWORDS = [
+  'fid bkg', 'fidelity', 'coinbase', 'robinhood', 'acorns', 'wealthfront',
+  'to savings', 'vanguard',
 ];
 
 const INCOME_KEYWORDS = [
   'direct deposit', 'payroll', 'salary', 'wages', 'paycheck',
   'employer', 'compensation', 'ach deposit', 'income deposit',
+];
+
+// All categories a transaction can be manually reassigned to (used by the
+// re-categorize dropdowns). "reimbursed" = money that left the account but was
+// paid back to you (e.g. employer tuition reimbursement via paycheck).
+export const CATEGORY_OPTIONS = [
+  'housing', 'groceries', 'dining', 'transportation', 'utilities',
+  'subscriptions', 'insurance', 'healthcare', 'education', 'debt', 'pets',
+  'transfer', 'reimbursed', 'discretionary', 'income',
 ];
 
 function parseAmount(value) {
@@ -93,11 +156,19 @@ function categorize(description, isCredit) {
   }
 
   if (desc.includes('zelle')) return 'transfer';
+  // Order matters: specific/essential buckets first, catch-all last.
+  if (TRANSPORTATION_KEYWORDS.some(k => desc.includes(k))) return 'transportation';
   if (GROCERY_KEYWORDS.some(k => desc.includes(k))) return 'groceries';
   if (DINING_KEYWORDS.some(k => desc.includes(k))) return 'dining';
   if (SUBSCRIPTION_KEYWORDS.some(k => desc.includes(k))) return 'subscriptions';
   if (UTILITY_KEYWORDS.some(k => desc.includes(k))) return 'utilities';
+  if (HOUSING_KEYWORDS.some(k => desc.includes(k))) return 'housing';
+  if (INSURANCE_KEYWORDS.some(k => desc.includes(k))) return 'insurance';
+  if (EDUCATION_KEYWORDS.some(k => desc.includes(k))) return 'education';
+  if (PET_KEYWORDS.some(k => desc.includes(k))) return 'pets';
+  if (HEALTHCARE_KEYWORDS.some(k => desc.includes(k))) return 'healthcare';
   if (DEBT_KEYWORDS.some(k => desc.includes(k))) return 'debt';
+  if (TRANSFER_KEYWORDS.some(k => desc.includes(k))) return 'transfer';
   return 'discretionary';
 }
 
