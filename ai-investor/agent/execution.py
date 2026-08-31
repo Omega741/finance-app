@@ -318,16 +318,26 @@ def rebalance_to_weights(
         if held <= 0:
             continue
         if target <= 0.0:
-            # Full exit — sell the whole position at market. Don't require a
-            # quote: a momentary quote failure must NOT leave an off-target
-            # position stranded (which over-invests the book into margin).
-            sell_qty = held
-        else:
-            price = latest_price(ticker)
-            if not price:
-                logger.warning("No quote for %s — skipping partial trim this cycle", ticker)
-                continue
-            sell_qty = min(held, round(notional / price, 4))
+            # Full exit — use close_position, which liquidates the EXACT holding
+            # (incl. fractional shares). A manual qty would be round()'d and can
+            # land ABOVE the true position (e.g. 31.269488 -> 31.2695), which
+            # Alpaca rejects as insufficient qty and silently strands the
+            # position on margin. close_position also cancels related orders.
+            try:
+                o = client.close_position(ticker)
+                results.append(OrderResult(
+                    ticker=ticker, side="sell", qty=held, entry_price=0.0,
+                    stop_price=0.0, order_id=str(o.id), status=str(o.status),
+                ))
+                logger.info("Closed position %s (%.6f sh)", ticker, held)
+            except Exception as e:
+                logger.error("Close position failed %s: %s", ticker, e)
+            continue
+        price = latest_price(ticker)
+        if not price:
+            logger.warning("No quote for %s — skipping partial trim this cycle", ticker)
+            continue
+        sell_qty = min(held, round(notional / price, 4))
         if sell_qty <= 0:
             continue
         try:
