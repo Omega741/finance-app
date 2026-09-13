@@ -210,4 +210,22 @@ def apply_turnover_control(
                     "— partial move toward target, bounding whipsaw",
                     scale, turnover * 100, cfg.max_turnover_per_cycle * 100)
 
+    # Safety: never return weights summing above 1.0 — that would leave the book
+    # on margin (negative cash). This happens when the no-trade band holds a
+    # position ABOVE its target while new names are added on top (which pushed
+    # the growth sleeve past its budget). Trim the over-target positions
+    # proportionally back until the book fits at 100%. Runs LAST so it isn't
+    # undone by the turnover cap.
+    total = sum(adjusted.values())
+    if total > 1.0:
+        over = {t: adjusted[t] - target_weights.get(t, 0.0)
+                for t in adjusted if adjusted[t] > target_weights.get(t, 0.0)}
+        over_sum = sum(over.values())
+        if over_sum > 0:
+            excess = total - 1.0
+            for t, amt in over.items():
+                adjusted[t] -= excess * (amt / over_sum)
+            logger.info("Trimmed %.1f%% from overweight positions to keep the book "
+                        "at/under 100%% (no margin)", excess * 100)
+
     return {t: w for t, w in adjusted.items() if w > 1e-9}

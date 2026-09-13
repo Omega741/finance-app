@@ -309,6 +309,7 @@ def rebalance_to_weights(
         (sells if diff < 0 else buys).append((ticker, notional, target))
 
     buy_ids: list[str] = []
+    sell_ids: list[str] = []
 
     # SELLS first (free cash). Cancel the symbol's resting stop so the shares
     # are not locked by the open stop order.
@@ -329,6 +330,7 @@ def rebalance_to_weights(
                     ticker=ticker, side="sell", qty=held, entry_price=0.0,
                     stop_price=0.0, order_id=str(o.id), status=str(o.status),
                 ))
+                sell_ids.append(str(o.id))
                 logger.info("Closed position %s (%.6f sh)", ticker, held)
             except Exception as e:
                 logger.error("Close position failed %s: %s", ticker, e)
@@ -341,20 +343,34 @@ def rebalance_to_weights(
         if sell_qty <= 0:
             continue
         try:
-            results.append(_market_order(ticker, "sell", sell_qty, client))
+            r = _market_order(ticker, "sell", sell_qty, client)
+            results.append(r)
+            sell_ids.append(r.order_id)
         except Exception as e:
             logger.error("Sell failed %s: %s", ticker, e)
 
-    # BUYS as whole shares.
+    # Wait for sells to settle so cash reflects the proceeds, then cap total
+    # buys to cash on hand. The strategy is long-only and must NOT buy on margin
+    # — unguarded buys had quietly pushed the book to ~105% invested / negative
+    # cash. A small buffer avoids slippage nudging cash below zero.
+    if sell_ids:
+        _wait_for_fills(sell_ids, client)
+    try:
+        available_cash = max(float(client.get_account().cash) - 25.0, 0.0)
+    except Exception:
+        available_cash = 0.0
+
+    # BUYS as whole shares, capped to available cash (no margin).
     for ticker, notional, target in buys:
         price = latest_price(ticker)
         if not price:
             logger.warning("No quote for %s — skipping buy", ticker)
             continue
-        qty = int(notional // price)   # whole shares only
+        spend = min(notional, available_cash)
+        qty = int(spend // price)   # whole shares, within available cash
         if qty < 1:
-            logger.info("%s buy notional $%.2f < 1 share ($%.2f) — skipping",
-                        ticker, notional, price)
+            logger.info("%s buy skipped — notional $%.2f, cash room $%.2f, price $%.2f",
+                        ticker, notional, available_cash, price)
             continue
         try:
             r = _market_order(ticker, "buy", qty, client)
@@ -362,6 +378,7 @@ def rebalance_to_weights(
             r.stop_price = round(price * (1.0 - trail_frac), 2)
             results.append(r)
             buy_ids.append(r.order_id)
+            available_cash -= qty * price
         except Exception as e:
             logger.error("Buy failed %s: %s", ticker, e)
 
